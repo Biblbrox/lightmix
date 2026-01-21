@@ -1,0 +1,31 @@
+[build]
+# build-std = true                              # do not build the std library
+zig = false                                    # do not use zig cc for the builds
+default-target = "x86_64-unknown-linux-gnu"    # use this target if none is explicitly provided
+pre-build = [                                  # additional commands to run prior to building the package
+    # "dpkg --add-architecture $CROSS_DEB_ARCH", 
+    # "apt-get update && apt-get --assume-yes install libssl-dev:$CROSS_DEB_ARCH"# pkg-config:$CROSS_DEB_ARCH libfontconfig1-dev:$CROSS_DEB_ARCH",
+    # "mkdir -p /usr/include/openssl/ && ldconfig",
+    #"ln -s /usr/include/x86_64-linux-gnu/openssl/opensslconf.h /usr/include/openssl/opensslconf.h",
+    #"ln -s /usr/include/x86_64-linux-gnu/openssl/configuration.h /usr/include/openssl/configuration.h"
+]     
+
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+    "TRAVIS",
+    #    "RUSTFLAGS",
+    #"PKG_CONFIG_SYSROOT_DIR",
+    #"PKG_CONFIG_PATH",
+    #"XDG_CACHE_HOME",
+    #"OPENSSL_DIR",
+    #"CROSS_TARGET_AARCH64_UNKNOWN_LINUX_GNU_IMAGE_TOOLCHAIN"
+]
+
+
+#[target.aarch64-unknown-linux-gnu]
+#image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:latest"
+
+[target.aarch64-unknown-linux-gnu]
+dockerfile = "Dockerfile"
