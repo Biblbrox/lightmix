@@ -1,16 +1,15 @@
 #![allow(clippy::manual_retain)]
 
-use std::{env, path::Path, time::Instant};
+use std::{env, time::Instant};
 
-use image::{GenericImageView, imageops::FilterType};
 use ndarray::Array;
 use ort::{
     inputs,
     session::{Session, SessionOutputs},
     value::TensorRef,
 };
-
-const CIFAR100_MODEL_URL: &str = "../model.onnx";
+use std::fs::File;
+use std::io::{BufReader, Read};
 
 #[rustfmt::skip]
 pub const CIFAR100_CLASS_LABELS: [&str; 100] = [
@@ -36,93 +35,87 @@ pub const CIFAR100_CLASS_LABELS: [&str; 100] = [
 "lawn_mower", "rocket", "streetcar", "tank", "tractor",
 ];
 
-fn softmax(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let exp: Vec<f32> = logits.iter().map(|x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|x| x / sum).collect()
+const CIFAR_IMAGE_SIZE: usize = 32 * 32 * 3;
+const CIFAR_RECORD_SIZE: usize = CIFAR_IMAGE_SIZE + 2;
+
+fn load_cifar100_test(path: &str) -> std::io::Result<Vec<(Vec<f32>, u8)>> {
+    let mut f = BufReader::new(File::open(path)?);
+    let mut dataset = Vec::new();
+
+    loop {
+        let mut buf = [0u8; CIFAR_RECORD_SIZE];
+        if f.read_exact(&mut buf).is_err() {
+            break;
+        }
+
+        let label = buf[1]; // fine label
+
+        let mut img = vec![0f32; CIFAR_IMAGE_SIZE];
+
+        // Normalize to [0,1]
+        for i in 0..1024 {
+            img[i] = buf[2 + i] as f32 / 255.0; // R
+            img[1024 + i] = buf[1026 + i] as f32 / 255.0; // G
+            img[2048 + i] = buf[2050 + i] as f32 / 255.0; // B
+        }
+
+        dataset.push((img, label));
+    }
+
+    Ok(dataset)
 }
 
 fn main() -> ort::Result<()> {
     let args: Vec<String> = env::args().collect();
     let model_path = &args[1];
-    // Load model
     let mut session = Session::builder()?.commit_from_file(model_path)?;
-    // Load & preprocess image
-    //let img = image::open(
-    //    Path::new(env::current_exe().unwrap().to_str().unwrap())
-    //        .join("data")
-    //        .join("example.png"),
-    //)
-    //.expect("failed to load image")
-    //.resize_exact(32, 32, FilterType::CatmullRom)
-    //.to_rgb8();
 
-    //for (x, y, pixel) in img.enumerate_pixels() {
-    //    let [r, g, b] = pixel.0;
-    //    input[[0, 0, y as usize, x as usize]] = r as f32 / 255.0;
-    //    input[[0, 1, y as usize, x as usize]] = g as f32 / 255.0;
-    //    input[[0, 2, y as usize, x as usize]] = b as f32 / 255.0;
-    //}
+    let cifar_path = &args[2]; // path to test.bin
+    let dataset = load_cifar100_test(cifar_path).unwrap();
 
-    let mut i = 0;
-    let now = Instant::now();
-    const ITERATIONS: u32 = 100;
-    let mut input = Array::<f32, _>::zeros((1, 3, 32, 32));
-    while i < ITERATIONS {
-        // Optional: CIFAR-100 mean/std normalization
-        //let mean = [0.5071, 0.4867, 0.4408];
-        //let std = [0.2675, 0.2565, 0.2761];
-        //for c in 0..3 {
-        //    input
-        //        .index_axis_mut(Axis(1), c)
-        //        .mapv_inplace(|x| (x - mean[c]) / std[c]);
-        //}
+    let mut correct = 0usize;
+    let mut total_latency = 0f64;
 
-        // Inference
+    let mut idx = 0;
+    for (img, label) in dataset.iter() {
+        let input = Array::from_shape_vec((1, 3, 32, 32), img.clone()).unwrap();
+
+        let start = Instant::now();
+
         let outputs: SessionOutputs =
             session.run(inputs!["input" => TensorRef::from_array_view(&input)?])?;
 
-        //let logits: Vec<f32> = outputs["output"]
-        //    .try_extract_array::<f32>()?
-        //    .index_axis(Axis(0), 0)
-        //    .iter()
-        //    .copied()
-        //    .collect();
+        let elapsed = start.elapsed().as_secs_f64();
+        total_latency += elapsed;
 
-        //let probs = softmax(&logits);
+        let logits: Vec<f32> = outputs["output"]
+            .try_extract_array::<f32>()?
+            .iter()
+            .copied()
+            .collect();
 
-        //// Top-1
-        //let (class_id, confidence) = probs
-        //    .iter()
-        //    .enumerate()
-        //    .max_by(|a, b| a.1.total_cmp(b.1))
-        //    .unwrap();
+        let pred = logits
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .unwrap()
+            .0 as u8;
 
-        //println!(
-        //    "Prediction: {} ({:.2}%)",
-        //    CIFAR100_CLASS_LABELS[class_id],
-        //    confidence * 100.0
-        //);
+        if pred == *label {
+            correct += 1;
+        }
 
-        // Optional: Top-5
-        //let mut top5: Vec<_> = probs.iter().enumerate().collect();
-        //top5.sort_by(|a, b| b.1.total_cmp(a.1));
-
-        //println!("Top-5:");
-        //for (idx, prob) in top5.iter().take(5) {
-        //    println!(
-        //        "  {:>20}: {:.2}%",
-        //        CIFAR100_CLASS_LABELS[*idx],
-        //        *prob * 100.0
-        //    );
-        //}
-
-        i += 1;
+        idx += 1;
+        if idx > 500 {
+            break;
+        }
     }
 
-    let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed / ITERATIONS);
+    let accuracy = correct as f32 / dataset.len() as f32 * 100.0;
+    let mean_latency_ms = (total_latency / dataset.len() as f64) * 1000.0;
+
+    println!("Accuracy: {:.2}%", accuracy);
+    println!("Mean latency: {:.3} ms/image", mean_latency_ms);
 
     Ok(())
 }

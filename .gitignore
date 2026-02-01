@@ -27,6 +27,9 @@ token_example.png
 image_example.png
 example.png
 
+# Datasets
+datasets/*
+
 
 # Project files
 .cargo

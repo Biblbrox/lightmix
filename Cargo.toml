@@ -3,8 +3,8 @@ name = "spectral_vit"
 version = "0.0.1"
 edition = "2024"
 
-#[workspace]
-#resolver = "2"
+[workspace]
+resolver = "2"
 
 [dependencies]
 image = "0.25.9"
