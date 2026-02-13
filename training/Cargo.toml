@@ -1,0 +1,10 @@
+[package]
+name = "embed_former_train"
+version = "0.0.1"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+burn = { version = "0.20.1", features = ["std", "tui", "train", "vision", "wgpu", "fusion", "cuda"], default-features = false  }

@@ -4,7 +4,7 @@ use std::{env, time::Instant};
 
 use ndarray::Array;
 use ort::{
-    inputs,
+    execution_providers, inputs,
     session::{Session, SessionOutputs},
     value::TensorRef,
 };
@@ -68,7 +68,11 @@ fn load_cifar100_test(path: &str) -> std::io::Result<Vec<(Vec<f32>, u8)>> {
 fn main() -> ort::Result<()> {
     let args: Vec<String> = env::args().collect();
     let model_path = &args[1];
-    let mut session = Session::builder()?.commit_from_file(model_path)?;
+    let mut session = Session::builder()?
+        //.with_execution_providers([
+        //    execution_providers::xnnpack::XNNPACKExecutionProvider::default().build(),
+        //])?
+        .commit_from_file(model_path)?;
 
     let cifar_path = &args[2]; // path to test.bin
     let dataset = load_cifar100_test(cifar_path).unwrap();
@@ -77,6 +81,7 @@ fn main() -> ort::Result<()> {
     let mut total_latency = 0f64;
 
     let mut idx = 0;
+    let limit = 1000;
     for (img, label) in dataset.iter() {
         let input = Array::from_shape_vec((1, 3, 32, 32), img.clone()).unwrap();
 
@@ -106,13 +111,13 @@ fn main() -> ort::Result<()> {
         }
 
         idx += 1;
-        if idx > 500 {
+        if idx > limit {
             break;
         }
     }
 
-    let accuracy = correct as f32 / dataset.len() as f32 * 100.0;
-    let mean_latency_ms = (total_latency / dataset.len() as f64) * 1000.0;
+    let accuracy = correct as f32 / limit as f32 * 100.0;
+    let mean_latency_ms = (total_latency / limit as f64) * 1000.0;
 
     println!("Accuracy: {:.2}%", accuracy);
     println!("Mean latency: {:.3} ms/image", mean_latency_ms);
