@@ -19,8 +19,8 @@ use crate::{
     data::{MnistBatch, MnistBatcher},
     //model::Model as Model,
     //model::ModelConfig as ModelConfig
-    spectre_vit::ViT as Model,
-    spectre_vit::ViTConfig as ModelConfig,
+    spectre_vit::SpectreViT as Model,
+    spectre_vit::SpectreViTConfig as ModelConfig,
 };
 
 impl<B: Backend> Model<B> {

@@ -8,3 +8,4 @@ resolver = "2"
 
 [dependencies]
 burn = { version = "0.20.1", features = ["std", "tui", "train", "vision", "wgpu", "fusion", "cuda"], default-features = false  }
+burn-cuda = "0.20.1"

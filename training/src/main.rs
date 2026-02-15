@@ -6,7 +6,7 @@ mod training;
 
 use crate::{
     //model::ModelConfig as ModelConfig,
-    spectre_vit::ViTConfig as ModelConfig,
+    spectre_vit::SpectreViTConfig as ModelConfig,
     training::TrainingConfig,
 };
 use burn::{
@@ -25,6 +25,8 @@ fn main() {
     const NUM_HEADS: usize = 8;
     const NUM_ENCODERS: usize = 4;
     const EMBED_DIM: usize = PATCH_SIZE.pow(2) * 1 as usize;
+    const HIDDEN_DIM: usize = 32;
+    const DROPOUT: f64 = 0.1;
 
     // Training params
     const BATCH_SIZE: usize = 16;
@@ -44,6 +46,8 @@ fn main() {
                 NUM_CLASSES,
                 PATCH_SIZE,
                 IMG_SIZE,
+                HIDDEN_DIM,
+                DROPOUT,
             ),
             AdamWConfig::new(),
         )
