@@ -1,9 +1,10 @@
 mod data;
 mod inference;
 mod model;
-mod spectre_vit;
 mod training;
 
+mod spectre_vit;
+mod vit;
 use crate::{
     //model::ModelConfig as ModelConfig,
     spectre_vit::SpectreViTConfig as ModelConfig,
