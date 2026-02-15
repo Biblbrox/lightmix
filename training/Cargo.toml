@@ -7,5 +7,20 @@ edition = "2024"
 resolver = "2"
 
 [dependencies]
-burn = { version = "0.20.1", features = ["std", "tui", "train", "vision", "wgpu", "fusion", "cuda"], default-features = false  }
+burn = { version = "0.20.1", default-features = false, features = [
+  "cuda",
+  "fusion",
+  "std",
+  "train",
+  "tui",
+  "vision",
+  "wgpu"
+] }
 burn-cuda = "0.20.1"
+polars = { version = "0.53.0", features = [
+  "async",
+  "lazy",
+  "new_streaming",
+  "parquet"
+] }
+walkdir = "2.5.0"

@@ -3,6 +3,7 @@ mod inference;
 mod model;
 mod training;
 
+mod databuilder;
 mod spectre_vit;
 mod vit;
 use crate::{
