@@ -1,7 +1,5 @@
+mod builder;
 mod dataloader;
-
-/// TODO: Implement a data building pipeline
-struct StreamingDataLoaderBuilder;
 
 mod schema_snippet {
     use polars::prelude::{DataType, Field, Schema};
@@ -181,10 +179,8 @@ mod main_snippet {
 
         println!("{}", q.explain(true).unwrap());
 
-        let ls = LocalSource { lf: q };
-
-        let dataloader = StreamingDataLoader::<Wgpu<f32, i32>, LocalSource, ImageNet1k>::new(
-            ls,
+        let dataloader = StreamingDataLoader::<Wgpu<f32, i32>, ImageNet1k>::new(
+            q,
             32,
             false,
             Default::default(),

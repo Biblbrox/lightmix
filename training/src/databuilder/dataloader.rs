@@ -10,20 +10,18 @@ use polars::{
 };
 
 /// This dataloader holds a LazyFrame of a data query to produce a stream of batches for the consumer.
-/// It is generic over input type I which should implement Into<LazyFrame> and over output type O
-/// which should implement From<DataFrame>
-pub struct StreamingDataLoader<B: Backend, I, O> {
+/// It is generic over output type O which should implement From<DataFrame>
+pub struct StreamingDataLoader<B: Backend, O> {
     dataquery: LazyFrame,
     batch_size: usize,
     shuffle: bool,
     total_items: usize,
     device: B::Device,
-    _i: PhantomData<I>,
     _o: PhantomData<O>,
 }
 
-impl<B: Backend, I: Into<LazyFrame>, O> StreamingDataLoader<B, I, O> {
-    /// Constructs a data query LazyFrame from the input source using its Into<LazyFrame> trait.
+impl<B: Backend, O> StreamingDataLoader<B, O> {
+    /// Constructs a data query LazyFrame from the input source which implements Into<LazyFrame> trait.
     ///
     /// # Notes
     ///
@@ -33,7 +31,12 @@ impl<B: Backend, I: Into<LazyFrame>, O> StreamingDataLoader<B, I, O> {
     /// * `total_items` - is calculated here once by eagerly collecting a `len` agg over a source
     ///   LazyFrame; it *should* be a fast operation if sources are parquet or arrow files, as they
     ///   contain number of rows in their metadata (see https://github.com/pola-rs/polars/issues/11404)
-    pub fn new(datasource: I, batch_size: usize, shuffle: bool, device: B::Device) -> Self {
+    pub fn new(
+        datasource: impl Into<LazyFrame>,
+        batch_size: usize,
+        shuffle: bool,
+        device: B::Device,
+    ) -> Self {
         let dataquery = datasource.into();
         let total_items = dataquery
             .clone()
@@ -52,16 +55,14 @@ impl<B: Backend, I: Into<LazyFrame>, O> StreamingDataLoader<B, I, O> {
             shuffle,
             total_items,
             device,
-            _i: PhantomData,
             _o: PhantomData,
         }
     }
 }
 
-impl<B, I, O> DataLoader<B, O> for StreamingDataLoader<B, I, O>
+impl<B, O> DataLoader<B, O> for StreamingDataLoader<B, O>
 where
     B: Backend,
-    I: Sync + Send,
     O: From<DataFrame> + Sync + Send + 'static,
 {
     /// Creates a StreamingDataLoaderIterator instance
@@ -88,8 +89,8 @@ where
         ))
     }
 
-    /// This creates a copy which adds a `slice` operation to the query graph. Burn`s `start` and `end`
-    /// translate to Polars` `offset` and `len`. Slice will be truncated if offset+len is bigger
+    /// This creates a copy which adds a `slice` operation to the query graph. Burn's `start` and `end`
+    /// translate to Polars' `offset` and `len`. Slice will be truncated if offset+len is bigger
     /// than row count
     fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, O>> {
         Arc::new(StreamingDataLoader::new(

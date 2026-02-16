@@ -19,6 +19,7 @@ burn = { version = "0.20.1", default-features = false, features = [
 burn-cuda = "0.20.1"
 polars = { version = "0.53.0", features = [
   "async",
+  "ipc",
   "lazy",
   "new_streaming",
   "parquet"
