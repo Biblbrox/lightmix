@@ -24,4 +24,5 @@ polars = { version = "0.53.0", features = [
   "new_streaming",
   "parquet"
 ] }
+toml = "1.0.2"
 walkdir = "2.5.0"

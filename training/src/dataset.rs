@@ -22,6 +22,7 @@ mod tests {
         cifar100::Cifar100Dataset, imagenet1k::ImageNet1kDataset, mnist::MnistDataset,
     };
 
+    #[test]
     fn test_dataset_loading() {
         let cache_dir: PlRefPath = "/home/iarsh/.cache/huggingface/hub".into();
         let mnist_path = cache_dir.join("datasets--ylecun--mnist");
