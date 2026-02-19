@@ -9,35 +9,27 @@ use polars::{
     prelude::{CollectBatches, Engine, LazyFrame, len},
 };
 
-/// This dataloader holds a LazyFrame of a data query to produce a stream of batches for the consumer.
-/// It is generic over output type O which should implement From<DataFrame>
 pub struct StreamingDataLoader<B: Backend, O> {
     dataquery: LazyFrame,
     batch_size: usize,
-    shuffle: bool,
+    shuffle_seed: Option<u64>,
     total_items: usize,
     device: B::Device,
     _o: PhantomData<O>,
 }
 
 impl<B: Backend, O> StreamingDataLoader<B, O> {
-    /// Constructs a data query LazyFrame from the input source which implements Into<LazyFrame> trait.
-    ///
-    /// # Notes
-    ///
-    /// * `shuffle` - is a reciprocal of CollectBatches' `maintain_order` and does not actually
-    ///   guarantee a proper shuffle.
-    ///
-    /// * `total_items` - is calculated here once by eagerly collecting a `len` agg over a source
-    ///   LazyFrame; it *should* be a fast operation if sources are parquet or arrow files, as they
-    ///   contain number of rows in their metadata (see https://github.com/pola-rs/polars/issues/11404)
     pub fn new(
         datasource: impl Into<LazyFrame>,
         batch_size: usize,
-        shuffle: bool,
-        device: B::Device,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
     ) -> Self {
         let dataquery = datasource.into();
+
+        // LazyFrame doesn't have a `height` method to count rows, so we run `select[len()]` query
+        // once here and cache the resulting cell value. It should be a fast metadata query when
+        // run against parquet files (see https://github.com/pola-rs/polars/issues/11404)
         let total_items = dataquery
             .clone()
             .select([len()])
@@ -52,9 +44,9 @@ impl<B: Backend, O> StreamingDataLoader<B, O> {
         Self {
             dataquery,
             batch_size,
-            shuffle,
+            shuffle_seed,
             total_items,
-            device,
+            device: device.clone(),
             _o: PhantomData,
         }
     }
@@ -63,15 +55,15 @@ impl<B: Backend, O> StreamingDataLoader<B, O> {
 impl<B, O> DataLoader<B, O> for StreamingDataLoader<B, O>
 where
     B: Backend,
-    O: From<DataFrame> + Clone + Sync + Send + 'static,
+    O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
 {
-    /// Creates a StreamingDataLoaderIterator instance
     fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<O> + 'a> {
-        Box::new(StreamingDataLoaderIterator::new(
+        Box::new(StreamingDataLoaderIterator::<B, O>::new(
             self.dataquery.clone(),
             self.batch_size,
-            self.shuffle,
+            self.shuffle_seed,
             self.total_items,
+            &self.device,
         ))
     }
 
@@ -79,92 +71,92 @@ where
         self.total_items
     }
 
-    /// This actually doesn't do much, just creates a copy with changed `device` value
     fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, O>> {
         Arc::new(StreamingDataLoader::new(
             self.dataquery.clone(),
             self.batch_size,
-            self.shuffle,
-            device.clone(),
+            self.shuffle_seed,
+            device,
         ))
     }
 
-    /// This creates a copy which adds a `slice` operation to the query graph. Burn's `start` and `end`
-    /// translate to Polars' `offset` and `len`. Slice will be truncated if offset+len is bigger
-    /// than row count
+    // NOTE: Slice will be truncated if end is outside the row count
     fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, O>> {
         Arc::new(StreamingDataLoader::new(
             self.dataquery
                 .clone()
                 .slice(start as i64, (end - start) as u32),
             self.batch_size,
-            self.shuffle,
-            self.device.clone(),
+            self.shuffle_seed,
+            &self.device,
         ))
     }
 }
 
-/// Basically a tracking iterator over DataFrame batches with a method to calculate progress
-pub struct StreamingDataLoaderIterator<O> {
+pub struct StreamingDataLoaderIterator<B: Backend, O> {
     batches: CollectBatches,
     batch_size: usize,
     current_batch: usize,
     total_items: usize,
-    phantom: PhantomData<O>,
+    shuffle_seed: Option<u64>,
+    device: B::Device,
+    _p: PhantomData<O>,
 }
 
-impl<B: Backend, O> Clone for StreamingDataLoader<B, O> {
-    fn clone(&self) -> Self {
-        Self {
-            dataquery: self.dataquery.clone(),
-            batch_size: self.batch_size,
-            shuffle: self.shuffle,
-            total_items: self.total_items,
-            device: self.device.clone(),
-            _o: PhantomData,
-        }
-    }
-}
-
-impl<O> StreamingDataLoaderIterator<O> {
+impl<B: Backend, O> StreamingDataLoaderIterator<B, O> {
     pub fn new(
         datasource: LazyFrame,
         batch_size: usize,
-        shuffle: bool,
+        shuffle_seed: Option<u64>,
         total_items: usize,
+        device: &B::Device,
     ) -> Self {
         Self {
             batches: datasource
-                .collect_batches(Engine::Auto, !shuffle, NonZero::new(batch_size), true)
+                .collect_batches(
+                    Engine::Auto,
+                    shuffle_seed.is_none(),
+                    NonZero::new(batch_size),
+                    true,
+                )
                 .unwrap(),
             batch_size,
             current_batch: 0,
             total_items,
-            phantom: PhantomData,
+            shuffle_seed,
+            device: device.clone(),
+            _p: PhantomData,
         }
     }
 }
 
-impl<O: From<DataFrame>> Iterator for StreamingDataLoaderIterator<O> {
+impl<B: Backend, O: From<(DataFrame, B::Device)>> Iterator for StreamingDataLoaderIterator<B, O> {
     type Item = O;
 
-    /// Next batch actually returns an Option<Result<DataFrame>>, so we transpose it, turn Result into
-    /// Option, and flatten double Options to a single Option<DataFrame>, which is then mapped to
-    /// the output O type using its From<DataFrame> trait
     fn next(&mut self) -> Option<Self::Item> {
+        let device = self.device.clone();
         self.current_batch += 1;
-        self.batches
-            .next()
-            .transpose()
-            .ok()
-            .flatten()
-            .map(|df| O::from(df))
+        self.batches.next().transpose().ok().flatten().map(|df| {
+            // Judging by the Polars source code, resampling full dataset without shuffling is
+            // potentially a no-op, so we don't need to force branching on shuffle_seed here
+            let df = df
+                .sample_n_literal(
+                    df.height(),
+                    false,
+                    self.shuffle_seed.is_some(),
+                    self.shuffle_seed,
+                )
+                .unwrap();
+            O::from((df, device))
+        })
     }
 }
 
-impl<O: From<DataFrame>> DataLoaderIterator<O> for StreamingDataLoaderIterator<O> {
-    /// I'm not sure if current_batch x batch_size may end up bigger than total_items, so watch out
-    /// for any weird execution failures
+impl<B: Backend, O: From<(DataFrame, B::Device)>> DataLoaderIterator<O>
+    for StreamingDataLoaderIterator<B, O>
+{
+    // Not sure if current_batch x batch_size may end up bigger than total_items, so watch out
+    // for any weird execution failures
     fn progress(&self) -> Progress {
         Progress::new(self.current_batch * self.batch_size, self.total_items)
     }

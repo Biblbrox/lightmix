@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use burn::{
     config::Config,
     module::Module,
@@ -9,19 +7,17 @@ use burn::{
     record::DefaultRecorder,
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
-        ClassificationOutput, InferenceStep, Learner, LearningResult, SupervisedTraining,
-        TrainOutput, TrainStep,
+        ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
     },
 };
-use polars::prelude::{LazyFrame, PlRefPath};
+use polars::prelude::PlRefPath;
 
 use crate::{
     //model::Model as Model,
     //model::ModelConfig as ModelConfig
-    dataloader::StreamingDataLoader,
     dataset::{
-        StreamableDataset,
+        PolarsDataset,
         mnist::{MnistBatch, MnistDataset},
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
@@ -92,29 +88,12 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
-    let mnist_path_train: PlRefPath = "hf://datasets/ylecun/mnist/**/train*".into();
-    let mnist_path_test: PlRefPath = "hf://datasets/ylecun/mnist/**/test*".into();
-    //let mnist_ds = MnistDataset::new(mnist_path.clone(), device.clone());
+    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
+    let mnist_path: PlRefPath = "hf://datasets/ylecun/mnist".into();
+    let mnist_ds = MnistDataset::new(mnist_path);
 
-    //let dataloader_train = mnist_ds.train(config.batch_size, true);
-    //let dataloader_test = mnist_ds.val(config.batch_size, false);
-
-    let train_q = LazyFrame::scan_parquet(mnist_path_train, Default::default()).unwrap();
-    let test_q = LazyFrame::scan_parquet(mnist_path_test, Default::default()).unwrap();
-
-    let dataloader_train = Arc::new(StreamingDataLoader::new(
-        train_q,
-        config.batch_size,
-        true,
-        device.clone(),
-    ));
-    let dataloader_test = Arc::new(StreamingDataLoader::new(
-        test_q,
-        config.batch_size,
-        false,
-        device.clone(),
-    ));
+    let dataloader_train = mnist_ds.train(config.batch_size, Some(config.seed), &device);
+    let dataloader_test = mnist_ds.val(config.batch_size, None, &device);
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))

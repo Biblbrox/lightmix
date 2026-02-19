@@ -1,28 +1,23 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use burn::{data::dataloader::DataLoader, prelude::*, tensor::Int};
 
+use polars::frame::DataFrame;
 use polars::prelude::{LazyFrame, PlRefPath, ScanArgsParquet};
 
-use crate::{dataloader::StreamingDataLoader, dataset::StreamableDataset};
+use crate::dataloader::StreamingDataLoader;
+use crate::dataset::PolarsDataset;
 
-use polars::frame::DataFrame;
 use zune_core::bytestream::ZCursor;
 use zune_png::PngDecoder;
 
-pub struct MnistDataset<B: Backend, O> {
+pub struct MnistDataset {
     uri: PlRefPath,
-    device: B::Device,
-    _p: PhantomData<O>,
 }
 
-impl<B: Backend, O> MnistDataset<B, O> {
-    pub fn new(uri: PlRefPath, device: B::Device) -> Self {
-        Self {
-            uri,
-            device,
-            _p: PhantomData,
-        }
+impl MnistDataset {
+    pub fn new(uri: PlRefPath) -> Self {
+        Self { uri }
     }
 }
 
@@ -32,11 +27,11 @@ pub struct MnistBatch<B: Backend> {
     pub targets: Tensor<B, 1, Int>,
 }
 
-impl<B: Backend> From<DataFrame> for MnistBatch<B> {
-    fn from(value: DataFrame) -> MnistBatch<B> {
-        let device = B::Device::default();
+impl<B: Backend> From<(DataFrame, B::Device)> for MnistBatch<B> {
+    fn from(value: (DataFrame, B::Device)) -> MnistBatch<B> {
+        let (df, device) = value;
 
-        let struct_col = value.column("image").unwrap().struct_().unwrap();
+        let struct_col = df.column("image").unwrap().struct_().unwrap();
         let bytes_col = struct_col.field_by_name("bytes").unwrap();
 
         let batch_size = bytes_col.len();
@@ -57,8 +52,7 @@ impl<B: Backend> From<DataFrame> for MnistBatch<B> {
         let batch_size = bytes_col.len();
         let mut label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 28 * 28);
 
-        value
-            .column("label")
+        df.column("label")
             .unwrap()
             .i64()
             .unwrap()
@@ -79,12 +73,17 @@ impl<B: Backend> From<DataFrame> for MnistBatch<B> {
     }
 }
 
-impl<B, O> StreamableDataset<B, O> for MnistDataset<B, O>
-where
-    B: Backend,
-    O: std::convert::From<polars::prelude::DataFrame> + Clone + Send + Sync + 'static,
-{
-    fn train(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
+impl PolarsDataset for MnistDataset {
+    fn train<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/train-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -97,12 +96,21 @@ where
         Arc::new(StreamingDataLoader::new(
             q,
             batch_size,
-            shuffle,
-            self.device.clone(),
+            shuffle_seed,
+            device,
         ))
     }
 
-    fn val(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
+    fn val<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/test-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -115,13 +123,18 @@ where
         Arc::new(StreamingDataLoader::new(
             q,
             batch_size,
-            shuffle,
-            self.device.clone(),
+            shuffle_seed,
+            device,
         ))
     }
 
     #[allow(unused_variables)]
-    fn test(&self, batch_size: usize, shuffle: bool) -> Option<Arc<dyn DataLoader<B, O>>> {
+    fn test<B: Backend, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Option<Arc<dyn DataLoader<B, O>>> {
         None
     }
 }
