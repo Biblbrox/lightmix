@@ -63,7 +63,7 @@ impl<B: Backend, O> StreamingDataLoader<B, O> {
 impl<B, O> DataLoader<B, O> for StreamingDataLoader<B, O>
 where
     B: Backend,
-    O: From<DataFrame> + Sync + Send + 'static,
+    O: From<DataFrame> + Clone + Sync + Send + 'static,
 {
     /// Creates a StreamingDataLoaderIterator instance
     fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<O> + 'a> {
@@ -111,6 +111,19 @@ pub struct StreamingDataLoaderIterator<O> {
     current_batch: usize,
     total_items: usize,
     phantom: PhantomData<O>,
+}
+
+impl<B: Backend, O> Clone for StreamingDataLoader<B, O> {
+    fn clone(&self) -> Self {
+        Self {
+            dataquery: self.dataquery.clone(),
+            batch_size: self.batch_size,
+            shuffle: self.shuffle,
+            total_items: self.total_items,
+            device: self.device.clone(),
+            _o: PhantomData,
+        }
+    }
 }
 
 impl<O> StreamingDataLoaderIterator<O> {

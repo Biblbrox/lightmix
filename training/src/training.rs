@@ -1,26 +1,30 @@
-use std::hash::DefaultHasher;
+use std::sync::Arc;
 
 use burn::{
     config::Config,
-    data::{dataloader::DataLoaderBuilder, dataset::vision::MnistDataset},
     module::Module,
     nn::loss::CrossEntropyLossConfig,
-    optim::{AdamConfig, AdamWConfig},
+    optim::AdamWConfig,
     prelude::Backend,
-    record::{CompactRecorder, DefaultRecorder},
+    record::DefaultRecorder,
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
-        ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
+        ClassificationOutput, InferenceStep, Learner, LearningResult, SupervisedTraining,
+        TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
     },
 };
+use polars::prelude::{LazyFrame, PlRefPath};
 
 use crate::{
-    data::{MnistBatch, MnistBatcher},
     //model::Model as Model,
     //model::ModelConfig as ModelConfig
-    spectre_vit::SpectreViT as Model,
-    spectre_vit::SpectreViTConfig as ModelConfig,
+    dataloader::StreamingDataLoader,
+    dataset::{
+        StreamableDataset,
+        mnist::{MnistBatch, MnistDataset},
+    },
+    spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
 
 impl<B: Backend> Model<B> {
@@ -88,19 +92,29 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    let batcher = MnistBatcher::default();
+    let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
+    let mnist_path_train: PlRefPath = "hf://datasets/ylecun/mnist/**/train*".into();
+    let mnist_path_test: PlRefPath = "hf://datasets/ylecun/mnist/**/test*".into();
+    //let mnist_ds = MnistDataset::new(mnist_path.clone(), device.clone());
 
-    let dataloader_train = DataLoaderBuilder::new(batcher.clone())
-        .batch_size(config.batch_size)
-        .shuffle(config.seed)
-        .num_workers(config.num_workers)
-        .build(MnistDataset::train());
+    //let dataloader_train = mnist_ds.train(config.batch_size, true);
+    //let dataloader_test = mnist_ds.val(config.batch_size, false);
 
-    let dataloader_test = DataLoaderBuilder::new(batcher)
-        .batch_size(config.batch_size)
-        .shuffle(config.seed)
-        .num_workers(config.num_workers)
-        .build(MnistDataset::test());
+    let train_q = LazyFrame::scan_parquet(mnist_path_train, Default::default()).unwrap();
+    let test_q = LazyFrame::scan_parquet(mnist_path_test, Default::default()).unwrap();
+
+    let dataloader_train = Arc::new(StreamingDataLoader::new(
+        train_q,
+        config.batch_size,
+        true,
+        device.clone(),
+    ));
+    let dataloader_test = Arc::new(StreamingDataLoader::new(
+        test_q,
+        config.batch_size,
+        false,
+        device.clone(),
+    ));
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))

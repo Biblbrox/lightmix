@@ -7,7 +7,7 @@ use burn::{
     record::{CompactRecorder, Recorder},
 };
 
-use crate::{data::MnistBatcher, training::TrainingConfig};
+use crate::training::TrainingConfig;
 
 pub fn infer<B: Backend>(artifact_dir: &str, device: B::Device, item: MnistItem) {
     let config = TrainingConfig::load(format!("{artifact_dir}/config.json"))
