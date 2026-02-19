@@ -2,6 +2,7 @@
 mod model;
 mod training;
 
+mod config;
 mod dataloader;
 mod dataset;
 mod spectre_vit;
