@@ -1,28 +1,34 @@
-use std::marker::PhantomData;
+use std::sync::Arc;
 
-use burn::prelude::Backend;
-use polars::prelude::{LazyFrame, PlRefPath, ScanArgsParquet};
+use burn::{data::dataloader::DataLoader, prelude::Backend};
+use polars::{
+    frame::DataFrame,
+    prelude::{LazyFrame, PlRefPath, ScanArgsParquet},
+};
 
-use crate::{dataloader::StreamingDataLoader, dataset::StreamableDataset};
+use crate::{dataloader::StreamingDataLoader, dataset::PolarsDataset};
 
-pub struct ImageNet1kDataset<B: Backend, O> {
+pub struct ImageNet1kDataset {
     uri: PlRefPath,
-    device: B::Device,
-    _p: PhantomData<O>,
 }
 
-impl<B: Backend, O> ImageNet1kDataset<B, O> {
-    pub fn new(uri: PlRefPath, device: B::Device) -> Self {
-        Self {
-            uri,
-            device,
-            _p: PhantomData,
-        }
+impl ImageNet1kDataset {
+    pub fn new(uri: PlRefPath) -> Self {
+        Self { uri }
     }
 }
 
-impl<B: Backend, O> StreamableDataset<B, O> for ImageNet1kDataset<B, O> {
-    fn train(&self, batch_size: usize, shuffle: bool) -> StreamingDataLoader<B, O> {
+impl PolarsDataset for ImageNet1kDataset {
+    fn train<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/train-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -32,10 +38,24 @@ impl<B: Backend, O> StreamableDataset<B, O> for ImageNet1kDataset<B, O> {
             },
         )
         .unwrap();
-        StreamingDataLoader::new(q, batch_size, shuffle, self.device.clone())
+        Arc::new(StreamingDataLoader::new(
+            q,
+            batch_size,
+            shuffle_seed,
+            device,
+        ))
     }
 
-    fn val(&self, batch_size: usize, shuffle: bool) -> StreamingDataLoader<B, O> {
+    fn val<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/validation-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -45,10 +65,24 @@ impl<B: Backend, O> StreamableDataset<B, O> for ImageNet1kDataset<B, O> {
             },
         )
         .unwrap();
-        StreamingDataLoader::new(q, batch_size, shuffle, self.device.clone())
+        Arc::new(StreamingDataLoader::new(
+            q,
+            batch_size,
+            shuffle_seed,
+            device,
+        ))
     }
 
-    fn test(&self, batch_size: usize, shuffle: bool) -> Option<StreamingDataLoader<B, O>> {
+    fn test<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Option<Arc<dyn DataLoader<B, O>>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/test-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -58,11 +92,11 @@ impl<B: Backend, O> StreamableDataset<B, O> for ImageNet1kDataset<B, O> {
             },
         )
         .unwrap();
-        Some(StreamingDataLoader::new(
+        Some(Arc::new(StreamingDataLoader::new(
             q,
             batch_size,
-            shuffle,
-            self.device.clone(),
-        ))
+            shuffle_seed,
+            device,
+        )))
     }
 }

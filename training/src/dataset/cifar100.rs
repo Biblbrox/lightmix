@@ -1,10 +1,6 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
-use burn::{
-    data::dataloader::DataLoader,
-    prelude::*,
-    tensor::{Float, Int},
-};
+use burn::{data::dataloader::DataLoader, prelude::*, tensor::Int};
 
 use burn::prelude::Backend;
 use polars::{
@@ -14,23 +10,8 @@ use polars::{
 use zune_core::bytestream::ZCursor;
 use zune_png::PngDecoder;
 
-use crate::{dataloader::StreamingDataLoader, dataset::StreamableDataset};
-
-pub struct Cifar100Dataset<B: Backend, O> {
-    uri: PlRefPath,
-    device: B::Device,
-    _p: PhantomData<O>,
-}
-
-impl<B: Backend, O> Cifar100Dataset<B, O> {
-    pub fn new(uri: PlRefPath, device: B::Device) -> Self {
-        Self {
-            uri,
-            device,
-            _p: PhantomData,
-        }
-    }
-}
+use crate::dataloader::StreamingDataLoader;
+use crate::dataset::PolarsDataset;
 
 #[derive(Clone, Debug)]
 pub struct Cifar100Batch<B: Backend> {
@@ -39,11 +20,11 @@ pub struct Cifar100Batch<B: Backend> {
     pub coarse_targets: Tensor<B, 1, Int>,
 }
 
-impl<B: Backend> From<DataFrame> for Cifar100Batch<B> {
-    fn from(value: DataFrame) -> Cifar100Batch<B> {
-        let device = B::Device::default();
+impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
+    fn from(value: (DataFrame, B::Device)) -> Cifar100Batch<B> {
+        let (df, device) = value;
 
-        let struct_col = value.column("img").unwrap().struct_().unwrap();
+        let struct_col = df.column("img").unwrap().struct_().unwrap();
         let bytes_col = struct_col.field_by_name("bytes").unwrap();
 
         let batch_size = bytes_col.len();
@@ -65,8 +46,7 @@ impl<B: Backend> From<DataFrame> for Cifar100Batch<B> {
         let mut coarse_label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 32 * 32);
         let mut fine_label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 32 * 32);
 
-        value
-            .column("coarse_label")
+        df.column("coarse_label")
             .unwrap()
             .i64()
             .unwrap()
@@ -74,8 +54,7 @@ impl<B: Backend> From<DataFrame> for Cifar100Batch<B> {
             .for_each(|label| {
                 coarse_label_buffer.extend(vec![label.unwrap()]);
             });
-        value
-            .column("fine_label")
+        df.column("fine_label")
             .unwrap()
             .i64()
             .unwrap()
@@ -102,12 +81,27 @@ impl<B: Backend> From<DataFrame> for Cifar100Batch<B> {
     }
 }
 
-impl<B, O> StreamableDataset<B, O> for Cifar100Dataset<B, O>
-where
-    B: Backend,
-    O: std::convert::From<polars::prelude::DataFrame> + Clone + Send + Sync + 'static,
-{
-    fn train(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
+pub struct Cifar100Dataset {
+    uri: PlRefPath,
+}
+
+impl Cifar100Dataset {
+    pub fn new(uri: PlRefPath) -> Self {
+        Self { uri }
+    }
+}
+
+impl PolarsDataset for Cifar100Dataset {
+    fn train<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/train-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -120,12 +114,21 @@ where
         Arc::new(StreamingDataLoader::new(
             q,
             batch_size,
-            shuffle,
-            self.device.clone(),
+            shuffle_seed,
+            device,
         ))
     }
 
-    fn val(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
+    fn val<B, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Arc<dyn DataLoader<B, O>>
+    where
+        B: Backend,
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
         let dspath = self.uri.clone().join("**/test-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -138,13 +141,18 @@ where
         Arc::new(StreamingDataLoader::new(
             q,
             batch_size,
-            shuffle,
-            self.device.clone(),
+            shuffle_seed,
+            device,
         ))
     }
 
     #[allow(unused_variables)]
-    fn test(&self, batch_size: usize, shuffle: bool) -> Option<Arc<dyn DataLoader<B, O>>> {
+    fn test<B: Backend, O>(
+        &self,
+        batch_size: usize,
+        shuffle_seed: Option<u64>,
+        device: &B::Device,
+    ) -> Option<Arc<dyn DataLoader<B, O>>> {
         None
     }
 }
