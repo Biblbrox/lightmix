@@ -1,6 +1,7 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use burn::{
+    data::dataloader::DataLoader,
     prelude::*,
     tensor::{Float, Int},
 };
@@ -101,8 +102,12 @@ impl<B: Backend> From<DataFrame> for Cifar100Batch<B> {
     }
 }
 
-impl<B: Backend, O> StreamableDataset<B, O> for Cifar100Dataset<B, O> {
-    fn train(&self, batch_size: usize, shuffle: bool) -> StreamingDataLoader<B, O> {
+impl<B, O> StreamableDataset<B, O> for Cifar100Dataset<B, O>
+where
+    B: Backend,
+    O: std::convert::From<polars::prelude::DataFrame> + Clone + Send + Sync + 'static,
+{
+    fn train(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
         let dspath = self.uri.clone().join("**/train-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -112,10 +117,15 @@ impl<B: Backend, O> StreamableDataset<B, O> for Cifar100Dataset<B, O> {
             },
         )
         .unwrap();
-        StreamingDataLoader::new(q, batch_size, shuffle, self.device.clone())
+        Arc::new(StreamingDataLoader::new(
+            q,
+            batch_size,
+            shuffle,
+            self.device.clone(),
+        ))
     }
 
-    fn val(&self, batch_size: usize, shuffle: bool) -> StreamingDataLoader<B, O> {
+    fn val(&self, batch_size: usize, shuffle: bool) -> Arc<dyn DataLoader<B, O>> {
         let dspath = self.uri.clone().join("**/test-*.parquet");
         let q = LazyFrame::scan_parquet(
             dspath,
@@ -125,11 +135,16 @@ impl<B: Backend, O> StreamableDataset<B, O> for Cifar100Dataset<B, O> {
             },
         )
         .unwrap();
-        StreamingDataLoader::new(q, batch_size, shuffle, self.device.clone())
+        Arc::new(StreamingDataLoader::new(
+            q,
+            batch_size,
+            shuffle,
+            self.device.clone(),
+        ))
     }
 
     #[allow(unused_variables)]
-    fn test(&self, batch_size: usize, shuffle: bool) -> Option<StreamingDataLoader<B, O>> {
+    fn test(&self, batch_size: usize, shuffle: bool) -> Option<Arc<dyn DataLoader<B, O>>> {
         None
     }
 }
