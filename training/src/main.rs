@@ -7,33 +7,27 @@ mod dataloader;
 mod dataset;
 mod spectre_vit;
 mod vit;
+use std::env::current_dir;
+
 use crate::{
     //model::ModelConfig as ModelConfig,
+    config::Config,
     spectre_vit::SpectreViTConfig as ModelConfig,
     training::TrainingConfig,
 };
 use burn::{
     backend::{Autodiff, Cuda},
-    optim::{AdamConfig, AdamWConfig},
-    tensor::{backend::DeviceOps, f16},
+    optim::AdamWConfig,
 };
 
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
-    const NUM_CLASSES: usize = 10;
-    const PATCH_SIZE: usize = 4;
-    const IMG_SIZE: usize = 28;
-    const NUM_HEADS: usize = 8;
-    const NUM_ENCODERS: usize = 4;
-    const EMBED_DIM: usize = PATCH_SIZE.pow(2) * 1 as usize;
-    const HIDDEN_DIM: usize = 32;
-    const DROPOUT: f64 = 0.1;
-
-    // Training params
-    const BATCH_SIZE: usize = 16;
-    const EPOCHS: usize = 40;
+    let cwd = current_dir().unwrap();
+    let path = cwd.join("experiments.toml");
+    let localpath = cwd.join("experiments.local.toml");
+    let config = Config::parse(&path, "mnist", "model", Some(&localpath));
 
     let device = burn::backend::cuda::CudaDevice::default();
 
@@ -43,19 +37,19 @@ fn main() {
         artifact_dir,
         TrainingConfig::new(
             ModelConfig::new(
-                EMBED_DIM,
-                NUM_HEADS,
-                NUM_ENCODERS,
-                NUM_CLASSES,
-                PATCH_SIZE,
-                IMG_SIZE,
-                HIDDEN_DIM,
-                DROPOUT,
+                config.embed_dim as usize,
+                config.num_heads as usize,
+                config.num_encoders as usize,
+                config.num_classes as usize,
+                config.patch_size as usize,
+                config.img_size as usize,
+                config.hidden_dim as usize,
+                config.dropout,
             ),
             AdamWConfig::new(),
         )
-        .with_batch_size(BATCH_SIZE)
-        .with_num_epochs(EPOCHS),
+        .with_batch_size(config.batch_size as usize)
+        .with_num_epochs(config.epochs as usize),
         device.clone(),
     );
 
