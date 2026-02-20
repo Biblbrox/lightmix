@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use burn::tensor::DType;
 use burn::{data::dataloader::DataLoader, prelude::*, tensor::Int};
 
 use burn::prelude::Backend;
@@ -21,62 +22,72 @@ pub struct Cifar100Batch<B: Backend> {
 }
 
 impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
-    fn from(value: (DataFrame, B::Device)) -> Cifar100Batch<B> {
+    fn from(value: (DataFrame, B::Device)) -> Self {
         let (df, device) = value;
+        let batch_size = df.height();
 
-        let struct_col = df.column("img").unwrap().struct_().unwrap();
-        let bytes_col = struct_col.field_by_name("bytes").unwrap();
+        // Image handling
+        let imsize = 32 * 32 * 3;
+        let mut imagebuf = vec![0; batch_size * imsize];
+        for (idx, bytes) in df
+            .column("img")
+            .unwrap()
+            .struct_()
+            .unwrap()
+            .field_by_name("bytes")
+            .unwrap()
+            .binary()
+            .unwrap()
+            .into_no_null_iter()
+            .enumerate()
+        {
+            let mut decoder = PngDecoder::new(ZCursor::new(bytes));
+            let slice = &mut imagebuf[idx * imsize..(idx + 1) * imsize];
+            decoder.decode_into(slice).unwrap();
+        }
 
-        let batch_size = bytes_col.len();
-        let mut image_buffer: Vec<u8> = Vec::with_capacity(batch_size * 3 * 32 * 32);
+        // Tensor packing with normalization
+        let rmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.5071, &device);
+        let gmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4867, &device);
+        let bmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4408, &device);
+        let mean = Tensor::stack::<4>(vec![rmean, gmean, bmean], 1);
 
-        bytes_col.binary().unwrap().iter().for_each(|opt_bytes| {
-            let mut decoder = PngDecoder::new(ZCursor::new(opt_bytes.unwrap()));
-            let pixels = decoder.decode_raw().unwrap();
-            image_buffer.extend(pixels);
-        });
+        let rstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2675, &device);
+        let gstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2565, &device);
+        let bstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2761, &device);
+        let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
 
-        let batch_images = Tensor::<B, 4>::from_data(
-            TensorData::new(image_buffer, Shape::new([batch_size, 3, 32, 32]))
-                .convert::<B::FloatElem>(),
-            &device,
-        );
+        let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
+            .convert_dtype(DType::F64);
+        let images = Tensor::<B, 4>::from_data(imagedata, &device)
+            .swap_dims(1, -1)
+            .div_scalar(255)
+            .sub(mean)
+            .div(std);
 
-        let batch_size = bytes_col.len();
-        let mut coarse_label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
-        let mut fine_label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
-
-        df.column("coarse_label")
+        // Label handling
+        let fine_labelbuf: Vec<i64> = df
+            .column("fine_label")
             .unwrap()
             .i64()
             .unwrap()
-            .iter()
-            .for_each(|label| {
-                coarse_label_buffer.extend(vec![label.unwrap()]);
-            });
-        df.column("fine_label")
+            .into_no_null_iter()
+            .collect();
+        let fine_targets = Tensor::<B, 1, Int>::from_ints(fine_labelbuf.as_slice(), &device);
+
+        let coarse_labelbuf: Vec<i64> = df
+            .column("coarse_label")
             .unwrap()
             .i64()
             .unwrap()
-            .iter()
-            .for_each(|label| {
-                fine_label_buffer.extend(vec![label.unwrap()]);
-            });
+            .into_no_null_iter()
+            .collect();
+        let coarse_targets = Tensor::<B, 1, Int>::from_ints(coarse_labelbuf.as_slice(), &device);
 
-        let batch_coarse_labels = Tensor::<B, 1, Int>::from_data(
-            TensorData::new(coarse_label_buffer, Shape::new([batch_size])),
-            &device,
-        );
-
-        let batch_fine_labels = Tensor::<B, 1, Int>::from_data(
-            TensorData::new(fine_label_buffer, Shape::new([batch_size])),
-            &device,
-        );
-
-        Cifar100Batch {
-            images: (batch_images / 255 - 0.1307) / 0.3081,
-            fine_targets: batch_fine_labels,
-            coarse_targets: batch_coarse_labels,
+        Self {
+            images,
+            fine_targets,
+            coarse_targets,
         }
     }
 }

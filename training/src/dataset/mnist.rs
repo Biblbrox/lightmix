@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use burn::tensor::DType;
 use burn::{data::dataloader::DataLoader, prelude::*, tensor::Int};
 
 use polars::frame::DataFrame;
@@ -28,48 +29,47 @@ pub struct MnistBatch<B: Backend> {
 }
 
 impl<B: Backend> From<(DataFrame, B::Device)> for MnistBatch<B> {
-    fn from(value: (DataFrame, B::Device)) -> MnistBatch<B> {
+    fn from(value: (DataFrame, B::Device)) -> Self {
         let (df, device) = value;
+        let batch_size = df.height();
 
-        let struct_col = df.column("image").unwrap().struct_().unwrap();
-        let bytes_col = struct_col.field_by_name("bytes").unwrap();
+        // Image handling
+        let mut imagebuf = vec![0; batch_size * 28 * 28];
+        for (idx, bytes) in df
+            .column("image")
+            .unwrap()
+            .struct_()
+            .unwrap()
+            .field_by_name("bytes")
+            .unwrap()
+            .binary()
+            .unwrap()
+            .into_no_null_iter()
+            .enumerate()
+        {
+            let mut decoder = PngDecoder::new(ZCursor::new(bytes));
+            let slice = &mut imagebuf[idx * 28 * 28..(idx + 1) * 28 * 28];
+            decoder.decode_into(slice).unwrap();
+        }
 
-        let batch_size = bytes_col.len();
-        let mut image_buffer: Vec<u8> = Vec::with_capacity(batch_size * 28 * 28);
+        let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 1, 28, 28], DType::U8)
+            .convert_dtype(DType::F64);
+        let images = Tensor::<B, 4>::from_data(imagedata, &device)
+            .div_scalar(255)
+            .sub_scalar(0.1307)
+            .div_scalar(0.3081);
 
-        bytes_col.binary().unwrap().iter().for_each(|opt_bytes| {
-            let mut decoder = PngDecoder::new(ZCursor::new(opt_bytes.unwrap()));
-            let pixels = decoder.decode_raw().unwrap();
-            image_buffer.extend(pixels);
-        });
-
-        let batch_images = Tensor::<B, 4>::from_data(
-            TensorData::new(image_buffer, Shape::new([batch_size, 1, 28, 28]))
-                .convert::<B::FloatElem>(),
-            &device,
-        );
-
-        let batch_size = bytes_col.len();
-        let mut label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
-
-        df.column("label")
+        // Label handling
+        let labelbuf: Vec<i64> = df
+            .column("label")
             .unwrap()
             .i64()
             .unwrap()
-            .iter()
-            .for_each(|label| {
-                label_buffer.extend(vec![label.unwrap()]);
-            });
+            .into_no_null_iter()
+            .collect();
+        let targets = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), &device);
 
-        let batch_labels = Tensor::<B, 1, Int>::from_data(
-            TensorData::new(label_buffer, Shape::new([batch_size])),
-            &device,
-        );
-
-        MnistBatch {
-            images: (batch_images / 255 - 0.1307) / 0.3081,
-            targets: batch_labels,
-        }
+        Self { images, targets }
     }
 }
 
