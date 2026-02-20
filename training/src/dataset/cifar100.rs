@@ -43,8 +43,8 @@ impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
         );
 
         let batch_size = bytes_col.len();
-        let mut coarse_label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 32 * 32);
-        let mut fine_label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 32 * 32);
+        let mut coarse_label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
+        let mut fine_label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
 
         df.column("coarse_label")
             .unwrap()

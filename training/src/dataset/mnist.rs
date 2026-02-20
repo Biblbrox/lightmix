@@ -50,7 +50,7 @@ impl<B: Backend> From<(DataFrame, B::Device)> for MnistBatch<B> {
         );
 
         let batch_size = bytes_col.len();
-        let mut label_buffer: Vec<i64> = Vec::with_capacity(batch_size * 28 * 28);
+        let mut label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
 
         df.column("label")
             .unwrap()

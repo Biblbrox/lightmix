@@ -44,7 +44,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::dataset::PolarsDataset;
-    use crate::dataset::{cifar100::Cifar100Batch, mnist::MnistBatch};
+    use crate::dataset::imagenet1k::ImageNet1kDataset;
+    use crate::dataset::{cifar100::Cifar100Batch, imagenet1k::ImageNet1kBatch, mnist::MnistBatch};
     use burn_cuda::{Cuda, CudaDevice};
     use polars::prelude::PlRefPath;
 
@@ -56,6 +57,7 @@ mod tests {
         let _cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
         let mnist_path: PlRefPath = "hf://datasets/ylecun/mnist".into();
         let cifar100_path: PlRefPath = "hf://datasets/uoft-cs/cifar100".into();
+        let imagenet1k_path: PlRefPath = "hf://datasets/ILSVRC/imagenet-1k".into();
 
         let shuffle_seed = Some(42);
         let batch_size = 100;
@@ -65,34 +67,32 @@ mod tests {
 
         let mnist_ds = MnistDataset::new(mnist_path);
         let cifar100_ds = Cifar100Dataset::new(cifar100_path);
+        let imagenet1k_ds = ImageNet1kDataset::new(imagenet1k_path);
 
         let mnist_train_dl = mnist_ds.train::<B, MnistBatch<B>>(batch_size, shuffle_seed, &device);
         let cifar100_train_dl =
             cifar100_ds.train::<B, Cifar100Batch<B>>(batch_size, shuffle_seed, &device);
+        let imagenet1k_train_dl =
+            imagenet1k_ds.train::<B, ImageNet1kBatch<B>>(batch_size, shuffle_seed, &device);
         let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        for _df in mnist_train_dl.iter() {
-            //println!(
-            //    "Image shape: {}. Targets.shape: {}",
-            //    df.images.shape(),
-            //    df.targets.shape()
-            //);
-        }
+        for _df in mnist_train_dl.iter() {}
         let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         println!(
             "Mnist train dataset preparing time: {} seconds",
             (end - start).as_secs()
         );
         let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        for _df in cifar100_train_dl.iter() {
-            //println!(
-            //    "Image shape: {}. Targets.shape: {}",
-            //    df.images.shape(),
-            //    df.fine_targets.shape()
-            //);
-        }
+        for _df in cifar100_train_dl.iter() {}
         let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         println!(
             "CIFAR100 train dataset preparing time: {} seconds",
+            (end - start).as_secs()
+        );
+        let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        for _df in imagenet1k_train_dl.iter() {}
+        let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        println!(
+            "ImageNet1k train dataset preparing time: {} seconds",
             (end - start).as_secs()
         );
     }
