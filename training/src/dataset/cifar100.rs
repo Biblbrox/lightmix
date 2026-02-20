@@ -4,6 +4,7 @@ use burn::tensor::DType;
 use burn::{data::dataloader::DataLoader, prelude::*, tensor::Int};
 
 use burn::prelude::Backend;
+use polars::prelude::{Column, DataType, Engine, Field, IntoLazy, col};
 use polars::{
     frame::DataFrame,
     prelude::{LazyFrame, PlRefPath, ScanArgsParquet},
@@ -27,24 +28,42 @@ impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
         let batch_size = df.height();
 
         // Image handling
-        let imsize = 32 * 32 * 3;
-        let mut imagebuf = vec![0; batch_size * imsize];
-        for (idx, bytes) in df
+        // Parallel PNG decoding using LazyAPI
+        let df = df
+            .lazy()
+            .with_column(col("img").map(
+                |col| {
+                    Ok(Column::new::<Vec<Vec<u8>>, _>(
+                        "img".into(),
+                        col.struct_()
+                            .unwrap()
+                            .field_by_name("bytes")
+                            .unwrap()
+                            .binary()
+                            .unwrap()
+                            .into_no_null_iter()
+                            .map(|bytes| {
+                                let mut decoder = PngDecoder::new(ZCursor::new(bytes));
+                                decoder.decode_raw().unwrap()
+                            })
+                            .collect(),
+                    ))
+                },
+                |_, _| Ok(Field::new("img".into(), DataType::Binary)),
+            ))
+            .collect_with_engine(Engine::Streaming)
+            .unwrap();
+
+        // Flat image bytes extraction
+        let imagebuf = df
             .column("img")
-            .unwrap()
-            .struct_()
-            .unwrap()
-            .field_by_name("bytes")
             .unwrap()
             .binary()
             .unwrap()
             .into_no_null_iter()
-            .enumerate()
-        {
-            let mut decoder = PngDecoder::new(ZCursor::new(bytes));
-            let slice = &mut imagebuf[idx * imsize..(idx + 1) * imsize];
-            decoder.decode_into(slice).unwrap();
-        }
+            .flatten()
+            .copied()
+            .collect();
 
         // Tensor packing with normalization
         let rmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.5071, &device);
