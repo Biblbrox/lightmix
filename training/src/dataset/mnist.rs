@@ -7,12 +7,11 @@ use polars::frame::DataFrame;
 use polars::prelude::{
     Column, DataType, Engine, Field, IntoLazy, LazyFrame, PlRefPath, ScanArgsParquet, col,
 };
+use zune_image::codecs::png::PngDecoder;
+use zune_image::codecs::qoi::zune_core::bytestream::ZCursor;
 
 use crate::dataloader::StreamingDataLoader;
 use crate::dataset::PolarsDataset;
-
-use zune_core::bytestream::ZCursor;
-use zune_png::PngDecoder;
 
 pub struct MnistDataset {
     uri: PlRefPath,
@@ -74,7 +73,7 @@ impl<B: Backend> From<(DataFrame, B::Device)> for MnistBatch<B> {
             .collect();
 
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 1, 28, 28], DType::U8)
-            .convert_dtype(DType::F64);
+            .convert_dtype(DType::F32);
         let images = Tensor::<B, 4>::from_data(imagedata, &device)
             .div_scalar(255)
             .sub_scalar(0.1307)

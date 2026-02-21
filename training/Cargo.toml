@@ -28,8 +28,8 @@ polars = { version = "0.53.0", features = [
 ] }
 toml = "1.0.2"
 walkdir = "2.5.0"
-zune-core = "0.5.1"
-zune-png = { version = "0.5.1" }  # ,feature=["portable-simd"]}
+zune-image = { version = "0.5.0", features = ["simd"] }
+zune-imageprocs = "0.5.1"
 
 [profile.dev.package.zune-png]
 opt-level = 3

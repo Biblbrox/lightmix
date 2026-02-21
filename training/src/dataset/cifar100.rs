@@ -9,8 +9,8 @@ use polars::{
     frame::DataFrame,
     prelude::{LazyFrame, PlRefPath, ScanArgsParquet},
 };
-use zune_core::bytestream::ZCursor;
-use zune_png::PngDecoder;
+use zune_image::codecs::png::PngDecoder;
+use zune_image::codecs::qoi::zune_core::bytestream::ZCursor;
 
 use crate::dataloader::StreamingDataLoader;
 use crate::dataset::PolarsDataset;
@@ -77,7 +77,7 @@ impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
         let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
 
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
-            .convert_dtype(DType::F64);
+            .convert_dtype(DType::F32);
         let images = Tensor::<B, 4>::from_data(imagedata, &device)
             .swap_dims(1, -1)
             .div_scalar(255)
