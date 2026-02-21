@@ -8,7 +8,18 @@ use burn::{
 };
 use polars::{
     frame::DataFrame,
-    prelude::{LazyFrame, PlRefPath, ScanArgsParquet},
+    prelude::{
+        Column, DataType, Engine, Field, IntoLazy, LazyFrame, PlRefPath, ScanArgsParquet, col,
+    },
+};
+use zune_image::{
+    codecs::{jpeg::JpegDecoder, qoi::zune_core::bytestream::ZCursor},
+    image::Image,
+    traits::OperationsTrait,
+};
+use zune_imageprocs::{
+    crop::Crop,
+    resize::{Resize, ResizeMethod},
 };
 use zune_core::{bytestream::ZCursor, options::DecoderOptions};
 use zune_image::{codecs::jpeg::JpegDecoder, image::Image, traits::OperationsTrait};
