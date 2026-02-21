@@ -14,8 +14,6 @@ use burn::{
 use polars::prelude::PlRefPath;
 
 use crate::{
-    //model::Model as Model,
-    //model::ModelConfig as ModelConfig
     dataset::{
         PolarsDataset,
         mnist::{MnistBatch, MnistDataset},
@@ -88,11 +86,11 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
+    let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
     let mnist_path: PlRefPath = "hf://datasets/ylecun/mnist".into();
-    let mnist_ds = MnistDataset::new(mnist_path);
+    let mnist_ds = MnistDataset::new(mnist_path.clone());
 
-    let dataloader_train = mnist_ds.train(config.batch_size, Some(config.seed), &device);
+    let dataloader_train = mnist_ds.train(config.batch_size, Some(42), &device);
     let dataloader_test = mnist_ds.val(config.batch_size, None, &device);
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use burn::{
     Tensor,
     data::dataloader::DataLoader,
-    prelude::Backend,
-    tensor::{DType, Int, TensorData},
+    prelude::{Backend, ToElement},
+    tensor::{Int, Shape, TensorData},
 };
 use polars::{
     frame::DataFrame,
@@ -21,6 +21,10 @@ use zune_imageprocs::{
     crop::Crop,
     resize::{Resize, ResizeMethod},
 };
+use zune_core::{bytestream::ZCursor, options::DecoderOptions};
+use zune_image::{codecs::jpeg::JpegDecoder, image::Image, traits::OperationsTrait};
+use zune_imageprocs::resize::Resize;
+use zune_png::PngDecoder;
 
 use crate::{dataloader::StreamingDataLoader, dataset::PolarsDataset};
 
@@ -35,89 +39,52 @@ pub struct ImageNet1kBatch<B: Backend> {
 }
 
 impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
-    fn from(value: (DataFrame, B::Device)) -> Self {
+    fn from(value: (DataFrame, B::Device)) -> ImageNet1kBatch<B> {
         let (df, device) = value;
-        let batch_size = df.height();
 
-        // Parallel JPEG decoding and resizing using LazyAPI
-        let df = df
-            .lazy()
-            .with_column(col("image").map(
-                |col| {
-                    Ok(Column::new::<Vec<Vec<u8>>, _>(
-                        "image".into(),
-                        col.struct_()
-                            .unwrap()
-                            .field_by_name("bytes")
-                            .unwrap()
-                            .binary()
-                            .unwrap()
-                            .into_no_null_iter()
-                            .map(|bytes| -> Vec<u8> {
-                                // Decode JPEG into Image
-                                let decoder = JpegDecoder::new(ZCursor::new(bytes));
-                                let mut image = Image::from_decoder(decoder).unwrap();
+        let struct_col = df.column("image").unwrap().struct_().unwrap();
+        let bytes_col = struct_col.field_by_name("bytes").unwrap();
 
-                                // Resize to 256x256
-                                let resizer = Resize::new(256, 256, ResizeMethod::Bicubic);
-                                resizer.execute(&mut image).unwrap();
+        let batch_size = bytes_col.len();
+        let mut image_buffer: Vec<u8> = Vec::with_capacity(batch_size * 3 * 224 * 224);
 
-                                // Center-crop to 224x224
-                                let cropper = Crop::new(224, 224, 16, 16);
-                                cropper.execute(&mut image).unwrap();
+        bytes_col.binary().unwrap().iter().for_each(|opt_bytes| {
+            let options = DecoderOptions::default();
+            let mut image = Image::read(ZCursor::new(opt_bytes.unwrap()), options).unwrap();
 
-                                // Flatten to raw RGB bytes
-                                image.flatten_frames().into_iter().flatten().collect()
-                            })
-                            .collect(),
-                    ))
-                },
-                |_, _| Ok(Field::new("image".into(), DataType::Binary)),
-            ))
-            .collect_with_engine(Engine::Streaming)
-            .unwrap();
+            Resize::new(224, 224, zune_imageprocs::resize::ResizeMethod::Bilinear)
+                .execute(&mut image)
+                .unwrap();
+            image_buffer.extend(image.flatten_to_u8().iter().flatten());
+        });
 
-        let imagebuf = df
-            .column("image")
-            .unwrap()
-            .binary()
-            .unwrap()
-            .into_no_null_iter()
-            .flatten()
-            .copied()
-            .collect();
+        let batch_images = Tensor::<B, 4>::from_data(
+            TensorData::new(image_buffer, Shape::new([batch_size, 3, 224, 224]))
+                .convert::<B::FloatElem>(),
+            &device,
+        );
 
-        let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 224, 224, 3], DType::U8)
-            .convert_dtype(DType::F32);
+        let batch_size = bytes_col.len();
+        let mut label_buffer: Vec<i64> = Vec::with_capacity(batch_size);
 
-        // Tensor packing with normalization
-        let rmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.485, &device);
-        let gmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.456, &device);
-        let bmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.406, &device);
-        let mean = Tensor::stack::<4>(vec![rmean, gmean, bmean], 1);
-
-        let rstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.229, &device);
-        let gstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.224, &device);
-        let bstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.225, &device);
-        let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
-
-        let images = Tensor::<B, 4>::from_data(imagedata, &device)
-            .swap_dims(1, -1)
-            .div_scalar(255)
-            .sub(mean)
-            .div(std);
-
-        // Label handling
-        let labelbuf: Vec<i64> = df
-            .column("label")
+        df.column("label")
             .unwrap()
             .i64()
             .unwrap()
-            .into_no_null_iter()
-            .collect();
-        let targets = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), &device);
+            .iter()
+            .for_each(|label| {
+                label_buffer.extend(vec![label.unwrap()]);
+            });
 
-        Self { images, targets }
+        let batch_labels = Tensor::<B, 1, Int>::from_data(
+            TensorData::new(label_buffer, Shape::new([batch_size])),
+            &device,
+        );
+
+        ImageNet1kBatch {
+            images: (batch_images / 255 - 0.1307) / 0.3081,
+            targets: batch_labels,
+        }
     }
 }
 
