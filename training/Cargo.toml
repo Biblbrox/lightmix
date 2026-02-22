@@ -1,0 +1,37 @@
+[package]
+name = "embed_former_train"
+version = "0.0.1"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+burn = { version = "0.20.1", default-features = false, features = [
+  "cuda",
+  "fusion",
+  "std",
+  "train",
+  "tui",
+  "vision",
+  "wgpu"
+] }
+burn-cuda = "0.20.1"
+image = "0.25.9"
+polars = { version = "0.53.0", features = [
+  "async",
+  "dtype-struct",
+  "ipc",
+  "lazy",
+  "new_streaming",
+  "parquet"
+] }
+toml = "1.0.2"
+walkdir = "2.5.0"
+zune-core = "0.5.1"
+zune-image = "0.5.0"
+zune-imageprocs = "0.5.1"
+zune-png = { version = "0.5.1" }  # ,feature=["portable-simd"]}
+
+[profile.dev.package.zune-png]
+opt-level = 3

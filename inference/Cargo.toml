@@ -9,8 +9,13 @@ resolver = "2"
 [dependencies]
 image = "0.25.9"
 ndarray = "0.16"
+#ort-tract = "0.1.0+0.21"
 ort = { version = "=2.0.0-rc.10", features = [
     "ndarray",
+    # "xnnpack",
+    # "acl",
+    # "armnn",
+    # "webgpu",
     "download-binaries",
     # "tls-rustls",
     "fetch-models",
