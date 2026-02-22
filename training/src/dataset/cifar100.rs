@@ -66,15 +66,22 @@ impl<B: Backend> From<(DataFrame, B::Device)> for Cifar100Batch<B> {
             .collect();
 
         // Tensor packing with normalization
-        let rmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.5071, &device);
-        let gmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4867, &device);
-        let bmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4408, &device);
-        let mean = Tensor::stack::<4>(vec![rmean, gmean, bmean], 1);
+        //let rmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.5071, &device);
+        //let gmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4867, &device);
+        //let bmean = Tensor::<B, 3>::full([batch_size, 32, 32], 0.4408, &device);
+        //let mean = Tensor::stack::<4>(vec![rmean, gmean, bmean], 1);
+        let mean = Tensor::<B, 1>::from_floats([0.5071, 0.4867, 0.4408], &device)
+            .reshape([1, 3, 1, 1])
+            .expand([batch_size, 3, 32, 32]);
 
-        let rstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2675, &device);
-        let gstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2565, &device);
-        let bstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2761, &device);
-        let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
+        //let rstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2675, &device);
+        //let gstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2565, &device);
+        //let bstd = Tensor::<B, 3>::full([batch_size, 32, 32], 0.2761, &device);
+        //let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
+
+        let std = Tensor::<B, 1>::from_floats([0.2675, 0.2565, 0.2761], &device)
+            .reshape([1, 3, 1, 1])
+            .expand([batch_size, 3, 32, 32]);
 
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
             .convert_dtype(DType::F32);

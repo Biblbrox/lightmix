@@ -3,17 +3,20 @@ use std::sync::Arc;
 use burn::{
     Tensor,
     data::dataloader::DataLoader,
+    module::Module,
     prelude::Backend,
     tensor::{DType, Int, TensorData},
 };
+use image::imageops::resize;
 use polars::{
     frame::DataFrame,
     prelude::{
         Column, DataType, Engine, Field, IntoLazy, LazyFrame, PlRefPath, ScanArgsParquet, col,
     },
 };
+use zune_core::options::DecoderOptions;
 use zune_image::{
-    codecs::{jpeg::JpegDecoder, qoi::zune_core::bytestream::ZCursor},
+    codecs::{jpeg::JpegDecoder, png::PngDecoder, qoi::zune_core::bytestream::ZCursor},
     image::Image,
     traits::OperationsTrait,
 };
@@ -44,6 +47,8 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
             .lazy()
             .with_column(col("image").map(
                 |col| {
+                    let resizer = Resize::new(256, 256, ResizeMethod::Bicubic);
+                    let cropper = Crop::new(224, 224, 16, 16);
                     Ok(Column::new::<Vec<Vec<u8>>, _>(
                         "image".into(),
                         col.struct_()
@@ -55,19 +60,24 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
                             .into_no_null_iter()
                             .map(|bytes| -> Vec<u8> {
                                 // Decode JPEG into Image
-                                let decoder = JpegDecoder::new(ZCursor::new(bytes));
-                                let mut image = Image::from_decoder(decoder).unwrap();
+                                let mut image = match Image::from_decoder(JpegDecoder::new(
+                                    ZCursor::new(bytes),
+                                )) {
+                                    Ok(img) => img,
+                                    Err(_) => {
+                                        Image::from_decoder(PngDecoder::new(ZCursor::new(bytes)))
+                                            .unwrap()
+                                    }
+                                };
 
                                 // Resize to 256x256
-                                let resizer = Resize::new(256, 256, ResizeMethod::Bicubic);
                                 resizer.execute(&mut image).unwrap();
 
                                 // Center-crop to 224x224
-                                let cropper = Crop::new(224, 224, 16, 16);
                                 cropper.execute(&mut image).unwrap();
 
                                 // Flatten to raw RGB bytes
-                                image.flatten_frames().into_iter().flatten().collect()
+                                image.flatten_frames().concat()
                             })
                             .collect(),
                     ))
@@ -91,15 +101,13 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
             .convert_dtype(DType::F32);
 
         // Tensor packing with normalization
-        let rmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.485, &device);
-        let gmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.456, &device);
-        let bmean = Tensor::<B, 3>::full([batch_size, 224, 224], 0.406, &device);
-        let mean = Tensor::stack::<4>(vec![rmean, gmean, bmean], 1);
+        let mean = Tensor::<B, 1>::from_floats([0.485, 0.456, 0.406], &device)
+            .reshape([1, 3, 1, 1])
+            .expand([batch_size, 3, 224, 224]);
 
-        let rstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.229, &device);
-        let gstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.224, &device);
-        let bstd = Tensor::<B, 3>::full([batch_size, 224, 224], 0.225, &device);
-        let std = Tensor::stack::<4>(vec![rstd, gstd, bstd], 1);
+        let std = Tensor::<B, 1>::from_floats([0.229, 0.224, 0.225], &device)
+            .reshape([1, 3, 1, 1])
+            .expand([batch_size, 3, 224, 224]);
 
         let images = Tensor::<B, 4>::from_data(imagedata, &device)
             .swap_dims(1, -1)
