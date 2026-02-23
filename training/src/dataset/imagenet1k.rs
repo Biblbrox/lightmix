@@ -7,7 +7,6 @@ use burn::{
     prelude::Backend,
     tensor::{DType, Int, TensorData},
 };
-use image::imageops::resize;
 use polars::{
     frame::DataFrame,
     prelude::{

@@ -5,6 +5,7 @@ mod training;
 mod config;
 mod dataloader;
 mod dataset;
+mod kernels;
 mod spectre_vit;
 mod vit;
 use std::env::current_dir;
