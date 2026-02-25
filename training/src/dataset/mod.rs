@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
-use burn::{data::dataloader::DataLoader, prelude::Backend};
-use polars::frame::DataFrame;
+use burn::{data::dataloader::DataLoader, prelude::*};
+use polars::prelude::*;
+
+use crate::dataloader::StreamingDataLoader;
 
 pub mod cifar100;
 pub mod imagenet1k;
 pub mod mnist;
 
 pub trait PolarsDataset {
+    fn uri(&self) -> PlRefPath;
+
     fn train<B, O>(
         &self,
         batch_size: usize,
@@ -16,7 +20,24 @@ pub trait PolarsDataset {
     ) -> Arc<dyn DataLoader<B, O>>
     where
         B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static;
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
+        let datasource = LazyFrame::scan_parquet(
+            self.uri().join("**/train-*.parquet"),
+            ScanArgsParquet {
+                glob: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        Arc::new(StreamingDataLoader::new(
+            datasource,
+            batch_size,
+            shuffle_seed,
+            device,
+        ))
+    }
 
     fn val<B, O>(
         &self,
@@ -26,7 +47,24 @@ pub trait PolarsDataset {
     ) -> Arc<dyn DataLoader<B, O>>
     where
         B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static;
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
+        let datasource = LazyFrame::scan_parquet(
+            self.uri().clone().join("**/validation-*.parquet"),
+            ScanArgsParquet {
+                glob: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        Arc::new(StreamingDataLoader::new(
+            datasource,
+            batch_size,
+            shuffle_seed,
+            device,
+        ))
+    }
 
     fn test<B, O>(
         &self,
@@ -36,7 +74,53 @@ pub trait PolarsDataset {
     ) -> Option<Arc<dyn DataLoader<B, O>>>
     where
         B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static;
+        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
+    {
+        let datasource = LazyFrame::scan_parquet(
+            self.uri().clone().join("**/test-*.parquet"),
+            ScanArgsParquet {
+                glob: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        Some(Arc::new(StreamingDataLoader::new(
+            datasource,
+            batch_size,
+            shuffle_seed,
+            device,
+        )))
+    }
+}
+
+pub fn decode<F>(column: Column, decoder: F) -> PolarsResult<Column>
+where
+    F: Fn(&[u8]) -> Vec<u8> + Sync + Send + 'static,
+{
+    let values: Vec<Vec<u8>> = column
+        .struct_()?
+        .field_by_name("bytes")?
+        .binary()?
+        .into_no_null_iter()
+        .map(&decoder)
+        .collect();
+
+    Ok(Column::new("bytes".into(), values))
+}
+
+pub fn extract_imagedata(df: &DataFrame, imagecol: &str) -> PolarsResult<Vec<u8>> {
+    Ok(df
+        .column(imagecol)?
+        .binary()?
+        .into_no_null_iter()
+        .flatten()
+        .copied()
+        .collect())
+}
+
+pub fn extract_labeldata(df: &DataFrame, labelcol: &str) -> PolarsResult<Vec<i64>> {
+    Ok(df.column(labelcol)?.i64()?.into_no_null_iter().collect())
 }
 
 #[cfg(test)]
@@ -47,8 +131,6 @@ mod tests {
     use crate::dataset::imagenet1k::ImageNet1kDataset;
     use crate::dataset::{cifar100::Cifar100Batch, imagenet1k::ImageNet1kBatch, mnist::MnistBatch};
     use burn_cuda::{Cuda, CudaDevice};
-    use polars::df;
-    use polars::frame::DataFrame;
     use polars::prelude::PlRefPath;
 
     use crate::dataset::cifar100::Cifar100Dataset;
