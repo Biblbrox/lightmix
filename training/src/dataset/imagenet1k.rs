@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    io::{BufReader, Cursor},
+    sync::Arc,
+};
 
 use burn::{
     Tensor,
@@ -7,6 +10,7 @@ use burn::{
     prelude::Backend,
     tensor::{DType, Int, TensorData},
 };
+use image::ImageReader;
 use polars::{
     frame::DataFrame,
     prelude::{
@@ -46,8 +50,6 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
             .lazy()
             .with_column(col("image").map(
                 |col| {
-                    let resizer = Resize::new(256, 256, ResizeMethod::Bicubic);
-                    let cropper = Crop::new(224, 224, 16, 16);
                     Ok(Column::new::<Vec<Vec<u8>>, _>(
                         "image".into(),
                         col.struct_()
@@ -59,24 +61,17 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
                             .into_no_null_iter()
                             .map(|bytes| -> Vec<u8> {
                                 // Decode JPEG into Image
-                                let mut image = match Image::from_decoder(JpegDecoder::new(
-                                    ZCursor::new(bytes),
-                                )) {
-                                    Ok(img) => img,
-                                    Err(_) => {
-                                        Image::from_decoder(PngDecoder::new(ZCursor::new(bytes)))
-                                            .unwrap()
-                                    }
-                                };
+                                let mut image = ImageReader::new(Cursor::new(bytes))
+                                    .with_guessed_format()
+                                    .unwrap()
+                                    .decode()
+                                    .unwrap();
 
                                 // Resize to 256x256
-                                resizer.execute(&mut image).unwrap();
-
-                                // Center-crop to 224x224
-                                cropper.execute(&mut image).unwrap();
-
-                                // Flatten to raw RGB bytes
-                                image.flatten_frames().concat()
+                                image =
+                                    image.resize(256, 256, image::imageops::FilterType::Triangle);
+                                image = image.crop(16, 16, 224, 224);
+                                image.into_rgb8().to_vec()
                             })
                             .collect(),
                     ))

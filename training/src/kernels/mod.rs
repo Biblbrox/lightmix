@@ -80,10 +80,11 @@ mod tests {
         backend::wgpu::WgpuRuntime,
         tensor::{Distribution, Tensor, Tolerance},
     };
+    use cubecl::{benchmark::Benchmark, profile::TimingMethod};
 
     use crate::kernels::{
-        AutodiffBackend, Backend, hadamard_transform, hadamard_transform_reference,
-        matmul_add_relu_custom, matmul_add_relu_reference,
+        AutodiffBackend, Backend, benchmark::HadamardBench, hadamard_transform,
+        hadamard_transform_reference, matmul_add_relu_custom, matmul_add_relu_reference,
     };
 
     fn inference_matmut_add_relu<B: Backend>(device: &B::Device) {
@@ -182,5 +183,28 @@ mod tests {
         inference_matmut_add_relu::<MyBackend>(&device);
         inference_hadamard_transform::<MyBackend>(&device);
         autodiff_matmul_add_relu::<MyAutodiffBackend>(&device);
+    }
+
+    pub fn launch<B: Backend>(device: B::Device) {
+        let bench1 = HadamardBench::<B> {
+            input_shape: vec![512, 8 * 1024],
+            device: device.clone(),
+        };
+        let bench2 = HadamardBench::<B> {
+            input_shape: vec![512, 8 * 1024],
+            device,
+        };
+
+        for bench in [bench1, bench2] {
+            println!("{}", bench.name());
+            println!("{}", bench.run(TimingMethod::System).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_benchmark_hadamard() {
+        type MyBackend = burn::backend::wgpu::CubeBackend<WgpuRuntime, f32, i32, u32>;
+        type MyAutodiffBackend = burn::backend::Autodiff<MyBackend>;
+        launch::<MyBackend>(Default::default());
     }
 }

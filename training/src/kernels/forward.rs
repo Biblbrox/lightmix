@@ -7,7 +7,7 @@ use burn_cubecl::{
     CubeBackend, CubeRuntime, FloatElement, IntElement, element::BoolElement,
     kernel::into_contiguous, tensor::CubeTensor,
 };
-use cubecl::{CubeCount, CubeDim};
+use cubecl::{CubeCount, CubeDim, prelude::TensorArg};
 
 /// Implement our custom backend trait for the generic `CubeBackend`.
 impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement> Backend

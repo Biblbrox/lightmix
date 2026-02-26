@@ -47,8 +47,7 @@ mod tests {
     use crate::dataset::imagenet1k::ImageNet1kDataset;
     use crate::dataset::{cifar100::Cifar100Batch, imagenet1k::ImageNet1kBatch, mnist::MnistBatch};
     use burn_cuda::{Cuda, CudaDevice};
-    use polars::df;
-    use polars::frame::DataFrame;
+    use indicatif::ProgressBar;
     use polars::prelude::PlRefPath;
 
     use crate::dataset::cifar100::Cifar100Dataset;
@@ -69,15 +68,19 @@ mod tests {
 
         let imagenet1k_train_dl =
             imagenet1k_ds.train::<B, ImageNet1kBatch<B>>(batch_size, shuffle_seed, &device);
+        let pbar = ProgressBar::new(imagenet1k_train_dl.num_items() as u64);
         let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         for (idx, _df) in imagenet1k_train_dl.iter().enumerate() {
-            if idx >= 9 {
+            if idx >= 200 {
                 break;
             }
+            pbar.inc(batch_size as u64);
         }
-
-        //for _df in imagenet1k_train_dl.iter() {}
+        //for _df in imagenet1k_train_dl.iter() {
+        //    pbar.inc(batch_size as u64);
+        //}
         let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        pbar.finish_with_message("Done");
         println!(
             "ImageNet1k train dataset preparing time: {} seconds",
             (end - start).as_secs()
@@ -99,9 +102,13 @@ mod tests {
 
         let cifar100_train_dl =
             cifar100_ds.train::<B, Cifar100Batch<B>>(batch_size, shuffle_seed, &device);
+        let pbar = ProgressBar::new(cifar100_train_dl.num_items() as u64);
         let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        for _df in cifar100_train_dl.iter() {}
+        for _df in cifar100_train_dl.iter() {
+            pbar.inc(batch_size as u64);
+        }
         let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        pbar.finish_with_message("Done");
         println!(
             "CIFAR100 train dataset preparing time: {} seconds",
             (end - start).as_secs()

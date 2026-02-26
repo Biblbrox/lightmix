@@ -5,13 +5,14 @@ use cubecl::{cube, prelude::*};
 pub fn hadamard_transform_kernel<F: Float>(input: &Tensor<F>, output: &mut Tensor<F>) {
     let n = input.shape(output.rank() - 1);
 
+    // TODO: add nice error handling
     if n == 0 {
         terminate!();
     }
 
-    //if !n.is_power_of_two() {
-    //    return Err("Input length must be a power of 2");
-    //}
+    if (n & (n - 1)) != 0 {
+        terminate!();
+    }
 
     let mut h = 1;
     while h < n {
