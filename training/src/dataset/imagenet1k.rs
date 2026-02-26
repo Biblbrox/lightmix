@@ -1,38 +1,10 @@
-use std::{
-    io::{BufReader, Cursor},
-    sync::Arc,
-};
+use std::io::Cursor;
 
-use burn::{
-    Tensor,
-    data::dataloader::DataLoader,
-    module::Module,
-    prelude::Backend,
-    tensor::{DType, Int, TensorData},
-};
-use image::ImageReader;
-use polars::{
-    frame::DataFrame,
-    prelude::{
-        Column, DataType, Engine, Field, IntoLazy, LazyFrame, PlRefPath, ScanArgsParquet, col,
-    },
-};
-use zune_core::options::DecoderOptions;
-use zune_image::{
-    codecs::{jpeg::JpegDecoder, png::PngDecoder, qoi::zune_core::bytestream::ZCursor},
-    image::Image,
-    traits::OperationsTrait,
-};
-use zune_imageprocs::{
-    crop::Crop,
-    resize::{Resize, ResizeMethod},
-};
+use burn::{prelude::*, tensor::DType};
+use image::{ImageReader, imageops::FilterType};
+use polars::prelude::*;
 
-use crate::{dataloader::StreamingDataLoader, dataset::PolarsDataset};
-
-pub struct ImageNet1kDataset {
-    uri: PlRefPath,
-}
+use crate::dataset::{PolarsDataset, decode, extract_imagedata, extract_labeldata};
 
 #[derive(Clone, Debug)]
 pub struct ImageNet1kBatch<B: Backend> {
@@ -49,48 +21,13 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
         let df = df
             .lazy()
             .with_column(col("image").map(
-                |col| {
-                    Ok(Column::new::<Vec<Vec<u8>>, _>(
-                        "image".into(),
-                        col.struct_()
-                            .unwrap()
-                            .field_by_name("bytes")
-                            .unwrap()
-                            .binary()
-                            .unwrap()
-                            .into_no_null_iter()
-                            .map(|bytes| -> Vec<u8> {
-                                // Decode JPEG into Image
-                                let mut image = ImageReader::new(Cursor::new(bytes))
-                                    .with_guessed_format()
-                                    .unwrap()
-                                    .decode()
-                                    .unwrap();
-
-                                // Resize to 256x256
-                                image =
-                                    image.resize(256, 256, image::imageops::FilterType::Triangle);
-                                image = image.crop(16, 16, 224, 224);
-                                image.into_rgb8().to_vec()
-                            })
-                            .collect(),
-                    ))
-                },
+                |column| decode(column, ImageNet1kDataset::decoder),
                 |_, _| Ok(Field::new("image".into(), DataType::Binary)),
             ))
             .collect_with_engine(Engine::Streaming)
             .unwrap();
 
-        let imagebuf = df
-            .column("image")
-            .unwrap()
-            .binary()
-            .unwrap()
-            .into_no_null_iter()
-            .flatten()
-            .copied()
-            .collect();
-
+        let imagebuf = extract_imagedata(&df, "image").unwrap();
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 224, 224, 3], DType::U8)
             .convert_dtype(DType::F32);
 
@@ -110,104 +47,37 @@ impl<B: Backend> From<(DataFrame, B::Device)> for ImageNet1kBatch<B> {
             .div(std);
 
         // Label handling
-        let labelbuf: Vec<i64> = df
-            .column("label")
-            .unwrap()
-            .i64()
-            .unwrap()
-            .into_no_null_iter()
-            .collect();
+        let labelbuf = extract_labeldata(&df, "label").unwrap();
         let targets = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), &device);
 
         Self { images, targets }
     }
 }
 
+pub struct ImageNet1kDataset {
+    uri: PlRefPath,
+}
+
 impl ImageNet1kDataset {
     pub fn new(uri: PlRefPath) -> Self {
         Self { uri }
     }
+
+    pub fn decoder(bytes: &[u8]) -> Vec<u8> {
+        let image = ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap()
+            .resize_exact(256, 256, FilterType::Triangle)
+            .crop_imm(16, 16, 224, 224);
+
+        image.to_rgb8().to_vec()
+    }
 }
 
 impl PolarsDataset for ImageNet1kDataset {
-    fn train<B, O>(
-        &self,
-        batch_size: usize,
-        shuffle_seed: Option<u64>,
-        device: &B::Device,
-    ) -> Arc<dyn DataLoader<B, O>>
-    where
-        B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
-    {
-        let dspath = self.uri.clone().join("**/train-*.parquet");
-        let q = LazyFrame::scan_parquet(
-            dspath,
-            ScanArgsParquet {
-                glob: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        Arc::new(StreamingDataLoader::new(
-            q,
-            batch_size,
-            shuffle_seed,
-            device,
-        ))
-    }
-
-    fn val<B, O>(
-        &self,
-        batch_size: usize,
-        shuffle_seed: Option<u64>,
-        device: &B::Device,
-    ) -> Arc<dyn DataLoader<B, O>>
-    where
-        B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
-    {
-        let dspath = self.uri.clone().join("**/validation-*.parquet");
-        let q = LazyFrame::scan_parquet(
-            dspath,
-            ScanArgsParquet {
-                glob: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        Arc::new(StreamingDataLoader::new(
-            q,
-            batch_size,
-            shuffle_seed,
-            device,
-        ))
-    }
-
-    fn test<B, O>(
-        &self,
-        batch_size: usize,
-        shuffle_seed: Option<u64>,
-        device: &B::Device,
-    ) -> Option<Arc<dyn DataLoader<B, O>>>
-    where
-        B: Backend,
-        O: From<(DataFrame, B::Device)> + Sync + Send + 'static,
-    {
-        let dspath = self.uri.clone().join("**/test-*.parquet");
-        let q = LazyFrame::scan_parquet(
-            dspath,
-            ScanArgsParquet {
-                glob: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        Some(Arc::new(StreamingDataLoader::new(
-            q,
-            batch_size,
-            shuffle_seed,
-            device,
-        )))
+    fn uri(&self) -> PlRefPath {
+        self.uri.clone()
     }
 }
