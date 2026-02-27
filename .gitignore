@@ -6,7 +6,6 @@ dist/
 wheels/
 *.egg-info
 uv.lock
-data/
 vit/__pycache__
 .vscode
 

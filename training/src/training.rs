@@ -14,9 +14,11 @@ use burn::{
 use polars::prelude::PlRefPath;
 
 use crate::{
-    dataset::{
-        PolarsDataset,
-        mnist::{MnistBatch, MnistDataset},
+    data::{
+        batch::mnist::{MnistBatch, MnistBatcher},
+        builder::StreamingDataLoaderBuilder,
+        dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
+        mapper::mnist::MnistMapper,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
@@ -86,12 +88,20 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
-    let mnist_path: PlRefPath = "hf://datasets/ylecun/mnist".into();
-    let mnist_ds = MnistDataset::new(mnist_path.clone());
+    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
+    let mnist_path = "hf://datasets/ylecun/mnist";
+    let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
+    let mnist_batcher = MnistBatcher::new();
 
-    let dataloader_train = mnist_ds.train(config.batch_size, Some(42), &device);
-    let dataloader_test = mnist_ds.val(config.batch_size, None, &device);
+    let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .with_batch_size(config.batch_size)
+        .with_shuffle(config.seed)
+        .with_batch_mapper(MnistMapper::decoder())
+        .build(mnist_ds.train());
+    let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .with_batch_size(config.batch_size)
+        .with_batch_mapper(MnistMapper::decoder())
+        .build(mnist_ds.validation());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))

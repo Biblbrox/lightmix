@@ -3,9 +3,7 @@ mod model;
 mod training;
 
 mod config;
-mod dataloader;
-mod dataset;
-mod kernels;
+mod data;
 mod spectre_vit;
 mod vit;
 use std::env::current_dir;
@@ -33,7 +31,7 @@ fn main() {
     let device = burn::backend::cuda::CudaDevice::default();
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
-    let artifact_dir = "/tmp/guide";
+    let artifact_dir = "./assets";
     crate::training::train::<MyAutodiffBackend>(
         artifact_dir,
         TrainingConfig::new(
