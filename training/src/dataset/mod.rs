@@ -131,6 +131,7 @@ mod tests {
     use crate::dataset::imagenet1k::ImageNet1kDataset;
     use crate::dataset::{cifar100::Cifar100Batch, imagenet1k::ImageNet1kBatch, mnist::MnistBatch};
     use burn_cuda::{Cuda, CudaDevice};
+    use indicatif::ProgressBar;
     use polars::prelude::PlRefPath;
 
     use crate::dataset::cifar100::Cifar100Dataset;
