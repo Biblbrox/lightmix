@@ -1,15 +1,10 @@
 use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
 
-use crate::data::batch::FrameBatcher;
+use crate::data::batch::{Batch, FrameBatcher};
 
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "label";
-
-pub struct MnistBatch<B: Backend> {
-    pub images: Tensor<B, 4>,
-    pub targets: Tensor<B, 1, Int>,
-}
 
 pub struct MnistBatcher;
 
@@ -19,8 +14,8 @@ impl MnistBatcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B, MnistBatch<B>> for MnistBatcher {
-    fn batch(&self, df: DataFrame, device: &B::Device) -> MnistBatch<B> {
+impl<B: Backend> FrameBatcher<B> for MnistBatcher {
+    fn batch(&self, df: DataFrame, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
         // Image handling
@@ -50,7 +45,7 @@ impl<B: Backend> FrameBatcher<B, MnistBatch<B>> for MnistBatcher {
             .collect();
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        MnistBatch {
+        Batch {
             images,
             targets: labels,
         }

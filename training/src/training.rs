@@ -11,14 +11,14 @@ use burn::{
         metric::{AccuracyMetric, LossMetric},
     },
 };
-use polars::prelude::PlRefPath;
 
 use crate::{
     data::{
-        batch::mnist::{MnistBatch, MnistBatcher},
+        batch::{Batch, mnist::MnistBatcher},
         builder::StreamingDataLoaderBuilder,
         dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
         mapper::mnist::MnistMapper,
+        strategy::buffered::BufferedBatchStrategy,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
@@ -39,10 +39,10 @@ impl<B: Backend> Model<B> {
 }
 
 impl<B: AutodiffBackend> TrainStep for Model<B> {
-    type Input = MnistBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: MnistBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
+    fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
         let item = self.forward_classification(batch.images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -50,10 +50,10 @@ impl<B: AutodiffBackend> TrainStep for Model<B> {
 }
 
 impl<B: Backend> InferenceStep for Model<B> {
-    type Input = MnistBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: MnistBatch<B>) -> ClassificationOutput<B> {
+    fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
         self.forward_classification(batch.images, batch.targets)
     }
 }
@@ -92,15 +92,14 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
     let mnist_path = "hf://datasets/ylecun/mnist";
     let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
     let mnist_batcher = MnistBatcher::new();
+    let strategy =
+        BufferedBatchStrategy::new(config.batch_size, 10).with_mapper(MnistMapper::decoder());
 
     let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
-        .with_batch_size(config.batch_size)
-        .with_shuffle(config.seed)
-        .with_batch_mapper(MnistMapper::decoder())
+        .with_strategy(strategy.clone().with_shuffle(config.seed))
         .build(mnist_ds.train());
     let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
-        .with_batch_size(config.batch_size)
-        .with_batch_mapper(MnistMapper::decoder())
+        .with_strategy(strategy)
         .build(mnist_ds.validation());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
