@@ -4,24 +4,33 @@ use burn::{
     nn::loss::CrossEntropyLossConfig,
     optim::AdamWConfig,
     prelude::Backend,
-    record::DefaultRecorder,
+    record::CompactRecorder,
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
     },
 };
-use polars::prelude::PlRefPath;
+use cubecl::cpu::CpuDevice;
+use polars::prelude::{IpcScanOptions, Schema, UnifiedScanArgs};
 
 use crate::{
     data::{
-        batch::mnist::{MnistBatch, MnistBatcher},
+        batch::{
+            imagenet1k::{ImageNet1kBatch, ImageNet1kBatcher},
+            mnist::{MnistBatch, MnistBatcher},
+        },
         builder::StreamingDataLoaderBuilder,
-        dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
-        mapper::mnist::MnistMapper,
+        dataset::{LazyDataset, LazyFiletype, imagenet1k::ImageNet1kDataset, mnist::MnistDataset},
+        mapper::{imagenet1k::ImageNet1kMapper, mnist::MnistMapper},
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
+
+type Batch<B> = ImageNet1kBatch<B>;
+type Dataset = ImageNet1kDataset;
+type Batcher = ImageNet1kBatcher;
+type Mapper = ImageNet1kMapper;
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -39,10 +48,10 @@ impl<B: Backend> Model<B> {
 }
 
 impl<B: AutodiffBackend> TrainStep for Model<B> {
-    type Input = MnistBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: MnistBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
+    fn step(&self, batch: Self::Input) -> TrainOutput<Self::Output> {
         let item = self.forward_classification(batch.images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -50,10 +59,10 @@ impl<B: AutodiffBackend> TrainStep for Model<B> {
 }
 
 impl<B: Backend> InferenceStep for Model<B> {
-    type Input = MnistBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: MnistBatch<B>) -> ClassificationOutput<B> {
+    fn step(&self, batch: Self::Input) -> Self::Output {
         self.forward_classification(batch.images, batch.targets)
     }
 }
@@ -66,6 +75,8 @@ pub struct TrainingConfig {
     pub num_epochs: usize,
     #[config(default = 64)]
     pub batch_size: usize,
+    #[config(default = 128)]
+    pub val_batch_size: usize,
     #[config(default = 4)]
     pub num_workers: usize,
     #[config(default = 42)]
@@ -74,43 +85,48 @@ pub struct TrainingConfig {
     pub learning_rate: f64,
 }
 
-fn create_artifact_dir(artifact_dir: &str) {
+pub fn train<B: AutodiffBackend>(
+    artifact_dir: &str,
+    data_dir: &str,
+    config: TrainingConfig,
+    device: B::Device,
+) {
     // Remove existing artifacts before to get an accurate learner summary
     std::fs::remove_dir_all(artifact_dir).ok();
     std::fs::create_dir_all(artifact_dir).ok();
-}
 
-pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-    create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
         .expect("Config should be saved successfully");
 
     B::seed(&device, config.seed);
 
-    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
-    let mnist_path = "hf://datasets/ylecun/mnist";
-    let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
-    let mnist_batcher = MnistBatcher::new();
+    let dataset = Dataset::new(data_dir, LazyFiletype::Arrow);
+    let batcher = Batcher::new();
 
-    let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
-        .with_batch_size(config.batch_size)
-        .with_shuffle(config.seed)
-        .with_batch_mapper(MnistMapper::decoder())
-        .build(mnist_ds.train());
-    let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
-        .with_batch_size(config.batch_size)
-        .with_batch_mapper(MnistMapper::decoder())
-        .build(mnist_ds.validation());
+    //let cpu_device = CpuDevice::default();
 
-    let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
+    let dataloader_train = StreamingDataLoaderBuilder::new(batcher.clone())
+        .with_batch_size(config.batch_size)
+        .with_shuffle(42)
+        .with_device(device.clone())
+        //.with_batch_mapper(Mapper::decoder())
+        .build(dataset.train());
+
+    let dataloader_test = StreamingDataLoaderBuilder::new(batcher.clone())
+        .with_batch_size(config.val_batch_size)
+        //.with_batch_mapper(Mapper::decoder())
+        .with_device(device.clone())
+        .build(dataset.test());
+
+    let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))
-        .with_file_checkpointer(DefaultRecorder::new())
+        .with_file_checkpointer(CompactRecorder::new())
         .num_epochs(config.num_epochs)
         .summary();
 
     let model = config.model.init::<B>(&device);
-    let result = learner.launch(Learner::new(
+    let result = training.launch(Learner::new(
         model,
         config.optimizer.init(),
         config.learning_rate,
@@ -118,6 +134,6 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     result
         .model
-        .save_file(format!("{artifact_dir}/model"), &DefaultRecorder::new())
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Trained model should be saved successfully");
 }

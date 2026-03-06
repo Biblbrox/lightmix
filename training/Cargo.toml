@@ -10,6 +10,7 @@ burn = { version = "0.20.1", default-features = false, features = [
   "std",
   "train",
   "tui",
+  "cpu",
   "wgpu",
 ] }
 burn-cuda = "0.20.1"
@@ -17,12 +18,15 @@ polars = { version = "0.53.0", features = [
   "async",
   "dtype-struct",
   "lazy",
+  "ipc",
   "new_streaming",
   "parquet",
-], default-features = false }
+  "performant",
+] }
 toml = "1.0.2"
 walkdir = "2.5.0"
 cubecl = { version = "0.9.0", features = ["wgpu"] }
 image = "0.25.9"
 burn-cubecl = "0.20.1"
 indicatif = "0.18.4"
+tikv-jemallocator = "0.6.1"

@@ -79,6 +79,7 @@ pub struct SpectreViT<B: Backend> {
 
 #[derive(Config, Debug)]
 pub struct SpectreViTConfig {
+    in_channels: usize,
     embed_dim: usize,
     num_heads: usize,
     num_layers: usize,
@@ -201,6 +202,7 @@ impl SpectreViTConfig {
         let num_patches = (self.image_size / self.patch_size).pow(2);
         SpectreViT {
             embedding_block: SpectrePatchEmbeddingConfig::new(
+                self.in_channels,
                 self.embed_dim,
                 self.patch_size,
                 self.image_size,
@@ -233,6 +235,7 @@ mod tests {
 
     type Backend = Cuda<f32, i32>;
 
+    const IN_CHANNELS: usize = 3;
     const PATCH_SIZE: usize = 4;
     const IMG_SIZE: usize = 32;
     const NUM_PATCHES: usize = (IMG_SIZE / PATCH_SIZE).pow(2); // 64
@@ -256,7 +259,7 @@ mod tests {
         );
 
         // Create pather
-        let patcher = SpectrePatcherConfig::new(EMBED_DIM, PATCH_SIZE).init(&device);
+        let patcher = SpectrePatcherConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE).init(&device);
         let patched_image = patcher.forward(test_image);
 
         assert_eq!(
@@ -275,7 +278,8 @@ mod tests {
             &device,
         );
 
-        let model = SpectrePatchEmbeddingConfig::new(EMBED_DIM, PATCH_SIZE, IMG_SIZE).init(&device);
+        let model = SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE)
+            .init(&device);
         let vit_input = model.forward(test_image);
         assert_eq!(
             vit_input.shape(),
@@ -294,6 +298,7 @@ mod tests {
         );
 
         let model = SpectreViTConfig::new(
+            IN_CHANNELS,
             EMBED_DIM,
             NUM_HEADS,
             NUM_ENCODERS,

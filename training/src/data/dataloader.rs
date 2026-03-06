@@ -140,10 +140,10 @@ impl<B: Backend, O> StreamingDataLoaderIterator<B, O> {
         Self {
             batches: dataset
                 .collect_batches(
-                    Engine::Auto,
+                    Engine::Streaming,
                     shuffle.is_none(),
                     NonZero::new(batch_size),
-                    true,
+                    false,
                 )
                 .unwrap(),
             batcher,

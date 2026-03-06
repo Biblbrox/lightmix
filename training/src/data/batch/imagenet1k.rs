@@ -1,4 +1,8 @@
-use burn::{prelude::*, tensor::DType};
+use burn::{
+    prelude::*,
+    tensor::{DType, Transaction},
+};
+use cubecl::cpu::CpuDevice;
 use polars::prelude::*;
 
 use crate::data::batch::FrameBatcher;
@@ -24,15 +28,25 @@ impl<B: Backend> FrameBatcher<B, ImageNet1kBatch<B>> for ImageNet1kBatcher {
         let batch_size = df.height();
 
         // Image handling
-        let imagebuf = df
-            .column(IMAGECOL)
+        let total_images = batch_size * 224 * 224 * 3;
+
+        let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
+        df.column(IMAGECOL)
             .unwrap()
             .binary()
             .unwrap()
             .into_no_null_iter()
-            .flatten()
-            .copied()
+            .for_each(|chunk| imagebuf.extend_from_slice(chunk));
+
+        // Label handling
+        let labelbuf: Vec<i64> = df
+            .column(LABELCOL)
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_no_null_iter()
             .collect();
+
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 224, 224, 3], DType::U8)
             .convert_dtype(DType::F32);
 
@@ -50,18 +64,10 @@ impl<B: Backend> FrameBatcher<B, ImageNet1kBatch<B>> for ImageNet1kBatcher {
             .sub(mean)
             .div(std);
 
-        // Label handling
-        let labelbuf: Vec<i64> = df
-            .column(LABELCOL)
-            .unwrap()
-            .i64()
-            .unwrap()
-            .into_no_null_iter()
-            .collect();
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
         ImageNet1kBatch {
-            images,
+            images: images,
             targets: labels,
         }
     }

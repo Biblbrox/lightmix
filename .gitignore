@@ -8,6 +8,9 @@ wheels/
 uv.lock
 vit/__pycache__
 .vscode
+*.svg
+*.data
+*.data.old
 
 # Virtual environments
 .venv
@@ -28,6 +31,7 @@ example.png
 
 # Datasets
 datasets/*
+assets/*
 
 
 # Project files
