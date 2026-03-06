@@ -11,18 +11,14 @@ use burn::{
         metric::{AccuracyMetric, LossMetric},
     },
 };
-use cubecl::cpu::CpuDevice;
-use polars::prelude::{IpcScanOptions, Schema, UnifiedScanArgs};
 
 use crate::{
     data::{
-        batch::{
-            imagenet1k::{ImageNet1kBatch, ImageNet1kBatcher},
-            mnist::{MnistBatch, MnistBatcher},
-        },
+        batch::{Batch, mnist::MnistBatcher},
         builder::StreamingDataLoaderBuilder,
-        dataset::{LazyDataset, LazyFiletype, imagenet1k::ImageNet1kDataset, mnist::MnistDataset},
-        mapper::{imagenet1k::ImageNet1kMapper, mnist::MnistMapper},
+        dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
+        mapper::mnist::MnistMapper,
+        strategy::buffered::BufferedBatchStrategy,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
@@ -51,7 +47,7 @@ impl<B: AutodiffBackend> TrainStep for Model<B> {
     type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: Self::Input) -> TrainOutput<Self::Output> {
+    fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
         let item = self.forward_classification(batch.images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -62,7 +58,7 @@ impl<B: Backend> InferenceStep for Model<B> {
     type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: Self::Input) -> Self::Output {
+    fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
         self.forward_classification(batch.images, batch.targets)
     }
 }
@@ -101,10 +97,19 @@ pub fn train<B: AutodiffBackend>(
 
     B::seed(&device, config.seed);
 
-    let dataset = Dataset::new(data_dir, LazyFiletype::Arrow);
-    let batcher = Batcher::new();
+    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
+    let mnist_path = "hf://datasets/ylecun/mnist";
+    let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
+    let mnist_batcher = MnistBatcher::new();
+    let strategy =
+        BufferedBatchStrategy::new(config.batch_size, 10).with_mapper(MnistMapper::decoder());
 
-    //let cpu_device = CpuDevice::default();
+    let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .with_strategy(strategy.clone().with_shuffle(config.seed))
+        .build(mnist_ds.train());
+    let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .with_strategy(strategy)
+        .build(mnist_ds.validation());
 
     let dataloader_train = StreamingDataLoaderBuilder::new(batcher.clone())
         .with_batch_size(config.batch_size)
