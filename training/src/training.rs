@@ -1,27 +1,24 @@
 use burn::{
-    config::Config,
-    module::Module,
-    nn::loss::CrossEntropyLossConfig,
-    optim::AdamWConfig,
-    prelude::Backend,
-    record::DefaultRecorder,
-    tensor::{Int, Tensor, backend::AutodiffBackend},
-    train::{
+    config::Config, data::dataloader::DataLoader, module::Module, nn::loss::CrossEntropyLossConfig, optim::AdamWConfig, prelude::Backend, record::CompactRecorder, tensor::{Int, Tensor, backend::AutodiffBackend}, train::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
-    },
+    }
 };
 
 use crate::{
     data::{
-        batch::{Batch, mnist::MnistBatcher},
+        batch::{Batch, imagenet1k::ImageNet1kBatcher},
         builder::StreamingDataLoaderBuilder,
-        dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
-        mapper::mnist::MnistMapper,
+        dataset::{LazyDataset, LazyFiletype, imagenet1k::ImageNet1kDataset},
+        mapper::imagenet1k::ImageNet1kMapper,
         strategy::buffered::BufferedBatchStrategy,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
+
+type Dataset = ImageNet1kDataset;
+type Batcher = ImageNet1kBatcher;
+type Mapper = ImageNet1kMapper;
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -66,6 +63,8 @@ pub struct TrainingConfig {
     pub num_epochs: usize,
     #[config(default = 64)]
     pub batch_size: usize,
+    #[config(default = 128)]
+    pub val_batch_size: usize,
     #[config(default = 4)]
     pub num_workers: usize,
     #[config(default = 42)]
@@ -74,37 +73,37 @@ pub struct TrainingConfig {
     pub learning_rate: f64,
 }
 
-fn create_artifact_dir(artifact_dir: &str) {
+pub fn train<B: AutodiffBackend>(
+    artifact_dir: &str,
+    data_dir: &str,
+    config: TrainingConfig,
+    device: B::Device,
+) {
     // Remove existing artifacts before to get an accurate learner summary
     std::fs::remove_dir_all(artifact_dir).ok();
     std::fs::create_dir_all(artifact_dir).ok();
-}
 
-pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-    create_artifact_dir(artifact_dir);
     config
         .save(format!("{artifact_dir}/config.json"))
         .expect("Config should be saved successfully");
 
     B::seed(&device, config.seed);
 
-    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
-    let mnist_path = "hf://datasets/ylecun/mnist";
-    let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
-    let mnist_batcher = MnistBatcher::new();
+    let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
+    let batcher = Batcher::new();
     let strategy =
-        BufferedBatchStrategy::new(config.batch_size, 10).with_mapper(MnistMapper::decoder());
+        BufferedBatchStrategy::new(config.batch_size, 10);//.with_mapper(Mapper::decoder());
 
-    let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+    let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
-        .build(mnist_ds.train());
-    let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .build(ds.train());
+    let dataloader_test = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
-        .build(mnist_ds.validation());
+        .build(ds.test());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))
-        .with_file_checkpointer(DefaultRecorder::new())
+        .with_file_checkpointer(CompactRecorder::new())
         .num_epochs(config.num_epochs)
         .summary();
 
@@ -117,6 +116,6 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     result
         .model
-        .save_file(format!("{artifact_dir}/model"), &DefaultRecorder::new())
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Trained model should be saved successfully");
 }

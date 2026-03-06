@@ -15,6 +15,7 @@ pub struct SpectrePatcher<B: Backend> {
 
 #[derive(Config, Debug)]
 pub struct SpectrePatcherConfig {
+    in_channels: usize,
     embed_dim: usize,
     patch_size: usize,
 }
@@ -29,6 +30,7 @@ pub struct SpectrePatchEmbedding<B: Backend> {
 
 #[derive(Config, Debug)]
 pub struct SpectrePatchEmbeddingConfig {
+    in_channels: usize,
     embed_dim: usize,
     patch_size: usize,
     image_size: usize,
@@ -48,9 +50,12 @@ impl<B: Backend> SpectrePatcher<B> {
 impl SpectrePatcherConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectrePatcher<B> {
         SpectrePatcher {
-            conv: Conv2dConfig::new([1, self.embed_dim], [self.patch_size, self.patch_size])
-                .with_stride([self.patch_size, self.patch_size])
-                .init(device),
+            conv: Conv2dConfig::new(
+                [self.in_channels, self.embed_dim],
+                [self.patch_size, self.patch_size],
+            )
+            .with_stride([self.patch_size, self.patch_size])
+            .init(device),
         }
     }
 }
@@ -78,7 +83,8 @@ impl SpectrePatchEmbeddingConfig {
         let distribution = Distribution::Normal(0.0, 1.0);
         let num_patches = (self.image_size / self.patch_size).pow(2);
         SpectrePatchEmbedding {
-            patcher: SpectrePatcherConfig::new(self.embed_dim, self.patch_size).init(device),
+            patcher: SpectrePatcherConfig::new(self.in_channels, self.embed_dim, self.patch_size)
+                .init(device),
             cls_token: Param::<Tensor<B, 3>>::from_tensor(Tensor::<B, 3>::random(
                 Shape::new([1, 1, self.embed_dim]),
                 distribution,
