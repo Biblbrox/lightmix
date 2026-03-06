@@ -1,29 +1,21 @@
 use burn::{
-    config::Config,
-    module::Module,
-    nn::loss::CrossEntropyLossConfig,
-    optim::AdamWConfig,
-    prelude::Backend,
-    record::CompactRecorder,
-    tensor::{Int, Tensor, backend::AutodiffBackend},
-    train::{
+    config::Config, data::dataloader::DataLoader, module::Module, nn::loss::CrossEntropyLossConfig, optim::AdamWConfig, prelude::Backend, record::CompactRecorder, tensor::{Int, Tensor, backend::AutodiffBackend}, train::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
-    },
+    }
 };
 
 use crate::{
     data::{
-        batch::{Batch, mnist::MnistBatcher},
+        batch::{Batch, imagenet1k::ImageNet1kBatcher},
         builder::StreamingDataLoaderBuilder,
-        dataset::{LazyDataset, LazyFiletype, mnist::MnistDataset},
-        mapper::mnist::MnistMapper,
+        dataset::{LazyDataset, LazyFiletype, imagenet1k::ImageNet1kDataset},
+        mapper::imagenet1k::ImageNet1kMapper,
         strategy::buffered::BufferedBatchStrategy,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
 
-type Batch<B> = ImageNet1kBatch<B>;
 type Dataset = ImageNet1kDataset;
 type Batcher = ImageNet1kBatcher;
 type Mapper = ImageNet1kMapper;
@@ -97,41 +89,26 @@ pub fn train<B: AutodiffBackend>(
 
     B::seed(&device, config.seed);
 
-    // let cache_dir: PlRefPath = "/home/biblbrox/.cache/huggingface/hub".into();
-    let mnist_path = "hf://datasets/ylecun/mnist";
-    let mnist_ds = MnistDataset::new(mnist_path, LazyFiletype::Parquet);
-    let mnist_batcher = MnistBatcher::new();
+    let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
+    let batcher = Batcher::new();
     let strategy =
-        BufferedBatchStrategy::new(config.batch_size, 10).with_mapper(MnistMapper::decoder());
+        BufferedBatchStrategy::new(config.batch_size, 10);//.with_mapper(Mapper::decoder());
 
-    let dataloader_train = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+    let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
-        .build(mnist_ds.train());
-    let dataloader_test = StreamingDataLoaderBuilder::new(mnist_batcher.clone())
+        .build(ds.train());
+    let dataloader_test = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
-        .build(mnist_ds.validation());
+        .build(ds.test());
 
-    let dataloader_train = StreamingDataLoaderBuilder::new(batcher.clone())
-        .with_batch_size(config.batch_size)
-        .with_shuffle(42)
-        .with_device(device.clone())
-        //.with_batch_mapper(Mapper::decoder())
-        .build(dataset.train());
-
-    let dataloader_test = StreamingDataLoaderBuilder::new(batcher.clone())
-        .with_batch_size(config.val_batch_size)
-        //.with_batch_mapper(Mapper::decoder())
-        .with_device(device.clone())
-        .build(dataset.test());
-
-    let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
+    let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))
         .with_file_checkpointer(CompactRecorder::new())
         .num_epochs(config.num_epochs)
         .summary();
 
     let model = config.model.init::<B>(&device);
-    let result = training.launch(Learner::new(
+    let result = learner.launch(Learner::new(
         model,
         config.optimizer.init(),
         config.learning_rate,

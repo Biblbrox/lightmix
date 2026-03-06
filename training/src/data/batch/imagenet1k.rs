@@ -12,7 +12,7 @@ const LABELCOL: &str = "label";
 
 pub struct ImageNet1kBatch<B: Backend> {
     pub images: Tensor<B, 4>,
-    pub labels: Tensor<B, 1, Int>,
+    pub targets: Tensor<B, 1, Int>,
 }
 
 pub struct ImageNet1kBatcher;

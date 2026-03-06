@@ -1,3 +1,5 @@
+#![recursion_limit = "2048"]
+
 mod model;
 mod training;
 
@@ -14,12 +16,17 @@ use burn::{
     backend::{Autodiff, Cuda},
     optim::AdamWConfig,
 };
-use tikv_jemallocator::Jemalloc;
+use burn_wgpu::{Wgpu, WgpuDevice};
+//use tikv_jemallocator::Jemalloc;
 
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+//#[global_allocator]
+//static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
     type MyBackend = Cuda<f32, i32>;
+    let device = burn::backend::cuda::CudaDevice::default();
+    //type MyBackend = Wgpu<f32, i32>;
+    //let device = burn::backend::wgpu::WgpuDevice::DiscreteGpu(0);
+
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
     let cwd = current_dir().unwrap();
@@ -47,7 +54,6 @@ fn main() {
     let dataset_path = dataset_path_buf.as_path().to_str().unwrap();
     println!("Loading dataset from path {}", dataset_path);
 
-    let device = burn::backend::cuda::CudaDevice::default();
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = "./assets";
