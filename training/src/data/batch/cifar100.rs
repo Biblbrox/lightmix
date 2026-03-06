@@ -1,17 +1,10 @@
 use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
 
-use crate::data::batch::FrameBatcher;
+use crate::data::batch::{Batch, FrameBatcher};
 
 const IMAGECOL: &str = "img";
-const FINE_LABELCOL: &str = "fine_label";
-const COARSE_LABELCOL: &str = "coarse_label";
-
-pub struct Cifar100Batch<B: Backend> {
-    pub images: Tensor<B, 4>,
-    pub fine_targets: Tensor<B, 1, Int>,
-    pub coarse_targets: Tensor<B, 1, Int>,
-}
+const LABELCOL: &str = "fine_label";
 
 pub struct Cifar100Batcher;
 
@@ -21,8 +14,8 @@ impl Cifar100Batcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B, Cifar100Batch<B>> for Cifar100Batcher {
-    fn batch(&self, df: DataFrame, device: &B::Device) -> Cifar100Batch<B> {
+impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
+    fn batch(&self, df: DataFrame, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
         // Image handling
@@ -53,28 +46,18 @@ impl<B: Backend> FrameBatcher<B, Cifar100Batch<B>> for Cifar100Batcher {
             .div(std);
 
         // Label handling
-        let fine_labelbuf: Vec<i64> = df
-            .column(FINE_LABELCOL)
+        let labelbuf: Vec<i64> = df
+            .column(LABELCOL)
             .unwrap()
             .i64()
             .unwrap()
             .into_no_null_iter()
             .collect();
-        let fine_labels = Tensor::<B, 1, Int>::from_ints(fine_labelbuf.as_slice(), device);
+        let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        let coarse_labelbuf: Vec<i64> = df
-            .column(COARSE_LABELCOL)
-            .unwrap()
-            .i64()
-            .unwrap()
-            .into_no_null_iter()
-            .collect();
-        let coarse_labels = Tensor::<B, 1, Int>::from_ints(coarse_labelbuf.as_slice(), device);
-
-        Cifar100Batch {
+        Batch {
             images,
-            fine_targets: fine_labels,
-            coarse_targets: coarse_labels,
+            targets: labels,
         }
     }
 }

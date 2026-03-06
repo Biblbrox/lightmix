@@ -2,49 +2,36 @@ use burn::{data::dataloader::DataLoader, prelude::*};
 use polars::prelude::*;
 
 use crate::data::{
-    batch::FrameBatcher,
+    batch::{Batch, FrameBatcher},
     dataloader::StreamingDataLoader,
-    mapper::{FrameMapper, LazyMapper},
+    mapper::LazyMapper,
+    strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
 };
 
-pub struct StreamingDataLoaderBuilder<B: Backend, O> {
-    batcher: Arc<dyn FrameBatcher<B, O>>,
-    batch_size: Option<usize>,
-    shuffle: Option<u64>,
-    batch_mapper: Option<FrameMapper>,
-    dataset_mapper: Option<LazyMapper>,
+pub struct StreamingDataLoaderBuilder<B: Backend> {
+    batcher: Arc<dyn FrameBatcher<B>>,
+    strategy: Option<Box<dyn FrameBatchStrategy>>,
+    mapper: Option<LazyMapper>,
     device: Option<B::Device>,
 }
 
-impl<B: Backend, O: Send + Sync + 'static> StreamingDataLoaderBuilder<B, O> {
-    pub fn new(batcher: Arc<dyn FrameBatcher<B, O>>) -> Self {
+impl<B: Backend> StreamingDataLoaderBuilder<B> {
+    pub fn new(batcher: Arc<dyn FrameBatcher<B>>) -> Self {
         Self {
             batcher,
-            batch_mapper: None,
-            dataset_mapper: None,
-            batch_size: None,
-            shuffle: None,
+            strategy: None,
+            mapper: None,
             device: None,
         }
     }
 
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.batch_size = Some(batch_size);
+    pub fn with_strategy(mut self, strategy: impl FrameBatchStrategy + 'static) -> Self {
+        self.strategy = Some(Box::new(strategy));
         self
     }
 
-    pub fn with_shuffle(mut self, seed: u64) -> Self {
-        self.shuffle = Some(seed);
-        self
-    }
-
-    pub fn with_batch_mapper(mut self, batch_mapper: FrameMapper) -> Self {
-        self.batch_mapper = Some(batch_mapper);
-        self
-    }
-
-    pub fn with_dataset_mapper(mut self, dataset_mapper: LazyMapper) -> Self {
-        self.dataset_mapper = Some(dataset_mapper);
+    pub fn with_mapper(mut self, mapper: LazyMapper) -> Self {
+        self.mapper = Some(mapper);
         self
     }
 
@@ -53,13 +40,12 @@ impl<B: Backend, O: Send + Sync + 'static> StreamingDataLoaderBuilder<B, O> {
         self
     }
 
-    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, O>> {
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(StreamingDataLoader::new(
             dataset,
             self.batcher,
-            self.batch_mapper,
-            self.batch_size.unwrap_or(1),
-            self.shuffle,
+            self.strategy
+                .unwrap_or(Box::new(FixedBatchStrategy::new(1))),
             self.device.unwrap_or_default(),
         ))
     }
