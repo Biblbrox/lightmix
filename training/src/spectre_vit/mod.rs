@@ -1,13 +1,17 @@
+mod benchmark;
 mod embeddings;
 mod permute;
 
 use burn::{
+    Tensor,
+    config::Config,
     module::Module,
     nn::{
         Dropout, DropoutConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig,
         pool::{AdaptiveAvgPool1d, AdaptiveAvgPool1dConfig},
     },
-    prelude::*,
+    prelude::Backend,
+    tensor::s,
 };
 
 use crate::spectre_vit::{
@@ -227,13 +231,17 @@ impl SpectreViTConfig {
 
 #[cfg(test)]
 mod tests {
+    use burn::tensor::Shape;
     use burn_cuda::Cuda;
+    use cubecl::{
+        benchmark::{Benchmark, BenchmarkComputations},
+        cuda::CudaRuntime,
+        profile::TimingMethod,
+    };
 
-    use crate::spectre_vit::embeddings::SpectrePatcherConfig;
+    use crate::spectre_vit::{benchmark::MHPermutMixBenchmark, embeddings::SpectrePatcherConfig};
 
     use super::*;
-
-    type Backend = Cuda<f32, i32>;
 
     const IN_CHANNELS: usize = 3;
     const PATCH_SIZE: usize = 4;
@@ -248,12 +256,64 @@ mod tests {
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
 
+    fn print_markdown_table(results: &[(u8, BenchmarkComputations)]) {
+        println!(
+            "| {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>12} |",
+            "num_heads", "mean (µs)", "median (µs)", "variance", "min (µs)", "max (µs)"
+        );
+        println!(
+            "|{:-^12}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|",
+            "", "", "", "", "", ""
+        );
+        for (heads, c) in results {
+            println!(
+                "| {:>10} | {:>12.2} | {:>12.2} | {:>12.2} | {:>12.2} | {:>12.2} |",
+                heads,
+                c.mean.as_micros(),
+                c.median.as_micros(),
+                c.variance.as_micros(),
+                c.min.as_micros(),
+                c.max.as_micros(),
+            );
+        }
+    }
+
+    #[test]
+    fn mh_permute_mix_bench() {
+        type B = burn::backend::cuda::Cuda;
+        let device = burn::backend::cuda::CudaDevice::default();
+        let batches = vec![8; 5];
+        let embed_dim = vec![64, 128, 256, 512, 1024];
+        let num_tokens = vec![65; 5];
+        let num_heads = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let out_channels = vec![64, 128, 256, 512, 1024];
+
+        let mut results: Vec<(u8, BenchmarkComputations)> = Vec::new();
+        for head in num_heads.into_iter() {
+            let bench = MHPermutMixBenchmark::<B> {
+                batch_size: batches[0],
+                embed_dim: embed_dim[0],
+                num_heads: head,
+                num_tokens: num_tokens[0],
+                out_channels: out_channels[0],
+                device: device.clone(),
+            };
+
+            let bench_res = bench.run(TimingMethod::System).unwrap();
+            let computed = BenchmarkComputations::new(&bench_res);
+            results.push((head as u8, computed));
+        }
+
+        print_markdown_table(&results);
+    }
+
     #[test]
     fn test_patcher() {
+        type B = burn::backend::cuda::Cuda;
         let device = burn::backend::cuda::CudaDevice::default();
 
         // Create test image
-        let test_image = Tensor::<Backend, 4>::zeros(
+        let test_image = Tensor::<B, 4>::zeros(
             Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
             &device,
         );
@@ -270,10 +330,11 @@ mod tests {
 
     #[test]
     fn test_patch_embedding() {
+        type B = burn::backend::cuda::Cuda;
         let device = burn::backend::cuda::CudaDevice::default();
 
         // Create test image
-        let test_image = Tensor::<Backend, 4>::zeros(
+        let test_image = Tensor::<B, 4>::zeros(
             Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
             &device,
         );
@@ -289,10 +350,11 @@ mod tests {
 
     #[test]
     fn test_vit() {
+        type B = burn::backend::cuda::Cuda;
         let device = burn::backend::cuda::CudaDevice::default();
 
         // Create test image
-        let test_image = Tensor::<Backend, 4>::zeros(
+        let test_image = Tensor::<B, 4>::zeros(
             Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
             &device,
         );

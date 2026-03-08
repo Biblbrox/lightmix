@@ -3,7 +3,7 @@ use polars::prelude::*;
 
 use crate::data::batch::{Batch, FrameBatcher};
 
-const IMAGECOL: &str = "img";
+const IMAGECOL: &str = "image";
 const LABELCOL: &str = "fine_label";
 
 pub struct Cifar100Batcher;
@@ -19,15 +19,26 @@ impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
         let batch_size = df.height();
 
         // Image handling
-        let imagebuf = df
-            .column(IMAGECOL)
+        let total_images = batch_size * 32 * 32 * 3;
+
+        let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
+        df.column(IMAGECOL)
             .unwrap()
             .binary()
             .unwrap()
             .into_no_null_iter()
-            .flatten()
-            .copied()
-            .collect();
+            .for_each(|chunk| imagebuf.extend_from_slice(chunk));
+        //let imagebuf = df
+        //    .column(IMAGECOL)
+        //    .unwrap()
+        //    .binary()
+        //    .unwrap()
+        //    .into_no_null_iter()
+        //    .flatten()
+        //    .copied()
+        //    .collect();
+
+        // Image handling
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
             .convert_dtype(DType::F32);
 

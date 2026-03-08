@@ -41,7 +41,7 @@ fn main() {
             localpath.to_str().unwrap()
         );
     }
-    let dataset = "imagenet1k";
+    let dataset = "cifar100";
     let config = Config::parse(&path, dataset, "model", Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());
     let dataset_path_buf = PathBuf::from(config.cache_dir.as_str()).join(dataset);
@@ -53,7 +53,6 @@ fn main() {
     }
     let dataset_path = dataset_path_buf.as_path().to_str().unwrap();
     println!("Loading dataset from path {}", dataset_path);
-
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = "./assets";

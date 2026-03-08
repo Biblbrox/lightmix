@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use burn::{Tensor, tensor::Distribution};
 use cubecl::{benchmark::Benchmark, future};
 

@@ -83,7 +83,7 @@ impl LazyDataset for ImageNet1kDataset {
     fn validation(&self) -> LazyFrame {
         let path = match self.val_subpath {
             Some(ref subpath) => self.uri.join(subpath),
-            None => self.uri.join("**/validation-*.*"),
+            None => self.uri.join("**/val*.*"),
         };
 
         match self.ft {

@@ -1,24 +1,41 @@
 use burn::{
-    config::Config, data::dataloader::DataLoader, module::Module, nn::loss::CrossEntropyLossConfig, optim::AdamWConfig, prelude::Backend, record::CompactRecorder, tensor::{Int, Tensor, backend::AutodiffBackend}, train::{
+    config::Config,
+    data::dataloader::DataLoader,
+    module::Module,
+    nn::loss::CrossEntropyLossConfig,
+    optim::AdamWConfig,
+    prelude::Backend,
+    record::CompactRecorder,
+    tensor::{Int, Tensor, backend::AutodiffBackend},
+    train::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         metric::{AccuracyMetric, LossMetric},
-    }
+    },
 };
 
 use crate::{
     data::{
-        batch::{Batch, imagenet1k::ImageNet1kBatcher},
+        batch::{
+            Batch, cifar100::Cifar100Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
+        },
         builder::StreamingDataLoaderBuilder,
-        dataset::{LazyDataset, LazyFiletype, imagenet1k::ImageNet1kDataset},
-        mapper::imagenet1k::ImageNet1kMapper,
+        dataset::{
+            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset, imagenet1k::ImageNet1kDataset,
+            mnist::MnistDataset,
+        },
+        mapper::{cifar100::Cifar100Mapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper},
         strategy::buffered::BufferedBatchStrategy,
     },
     spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
 };
 
-type Dataset = ImageNet1kDataset;
-type Batcher = ImageNet1kBatcher;
-type Mapper = ImageNet1kMapper;
+type Dataset = Cifar100Dataset;
+type Batcher = Cifar100Batcher;
+type Mapper = Cifar100Mapper;
+
+//type Dataset = ImageNet1kDataset;
+//type Batcher = ImageNet1kBatcher;
+//type Mapper = Cifar100Mapper;
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -91,15 +108,14 @@ pub fn train<B: AutodiffBackend>(
 
     let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
-    let strategy =
-        BufferedBatchStrategy::new(config.batch_size, 10);//.with_mapper(Mapper::decoder());
+    let strategy = BufferedBatchStrategy::new(config.batch_size, 10); //.with_mapper(Mapper::decoder());
 
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
         .build(ds.train());
     let dataloader_test = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
-        .build(ds.test());
+        .build(ds.validation());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
         .metrics((AccuracyMetric::new(), LossMetric::new()))

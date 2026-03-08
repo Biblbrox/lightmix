@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from PIL.Image import Resampling
 import argparse
 from os import mkdir
@@ -29,28 +28,21 @@ def decode(raw: bytes, spec: dict) -> bytes:
     return img.tobytes()
 
 
-def process_batch_parallel(
-    raw_images: list[bytes], spec: dict, n_workers: int = 8
-) -> list[bytes]:
-    with ThreadPoolExecutor(max_workers=n_workers) as ex:
-        futures = [ex.submit(decode, b, spec) for b in raw_images]
-        return [f.result() for f in futures]
-
-
 def write_arrow(parquet_path: Path, out_path: Path, dataset):
     spec = DATASET_SPECS[dataset]
     batch_size = 2048
     arrow_path = out_path.joinpath(f"{parquet_path.stem}.arrow")
 
     image_col = "img" if dataset == "cifar100" else "image"
-    df = (
-        pl.scan_parquet(parquet_path)
-        .unnest(image_col)
-        .drop("path")
-        .rename({"bytes": "image"})
-    )
+    df = pl.scan_parquet(parquet_path)
+    try:
+        schema = df.collect_schema()
+    except pl.exceptions.ComputeError:
+        print(f"Unable to find files with glob: {parquet_path}. Skipping")
+        return
+    df = df.unnest(image_col).drop("path").rename({"bytes": "image"})
 
-    print(df.schema)
+    print(schema)
     df.with_columns(
         pl.col("image").map_elements(
             lambda bytes: decode(bytes, spec), return_dtype=pl.Binary
@@ -62,13 +54,9 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
 
 
 def convert(in_path: Path, out_path: Path, dataset):
-    # parquet_train = in_path.glob("**/train-*.parquet")
-    # parquet_test = in_path.glob("**/test-*.parquet")
-    # parquet_val = in_path.glob("**/val-*.parquet")
-
-    parquet_train = in_path.joinpath("**/train-*.parquet")
-    parquet_test = in_path.joinpath("**/test-*.parquet")
-    parquet_val = in_path.joinpath("**/val-*.parquet")
+    parquet_train = in_path.joinpath("**/train*.parquet")
+    parquet_test = in_path.joinpath("**/test*.parquet")
+    parquet_val = in_path.joinpath("**/val*.parquet")
 
     if exists(out_path) and isfile(out_path):
         print(f"Path {out_path} already exists and it's a file")
@@ -76,15 +64,12 @@ def convert(in_path: Path, out_path: Path, dataset):
         mkdir(out_path)
 
     print("Writing train dataset:")
-    # for f in tqdm(parquet_train):
     write_arrow(parquet_train, out_path, dataset)
 
     print("Writing test dataset:")
-    # for f in tqdm(parquet_test):
     write_arrow(parquet_test, out_path, dataset)
 
     print("Writing val dataset:")
-    # for f in tqdm(parquet_val):
     write_arrow(parquet_val, out_path, dataset)
 
 
