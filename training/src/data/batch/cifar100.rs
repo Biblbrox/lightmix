@@ -28,15 +28,6 @@ impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
             .unwrap()
             .into_no_null_iter()
             .for_each(|chunk| imagebuf.extend_from_slice(chunk));
-        //let imagebuf = df
-        //    .column(IMAGECOL)
-        //    .unwrap()
-        //    .binary()
-        //    .unwrap()
-        //    .into_no_null_iter()
-        //    .flatten()
-        //    .copied()
-        //    .collect();
 
         // Image handling
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)

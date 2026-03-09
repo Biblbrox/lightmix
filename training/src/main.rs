@@ -3,6 +3,7 @@
 mod model;
 mod training;
 
+mod augmentations;
 mod config;
 mod data;
 mod spectre_vit;

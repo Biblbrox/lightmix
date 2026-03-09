@@ -1,8 +1,4 @@
-use burn::{
-    prelude::*,
-    tensor::{DType, Transaction},
-};
-use cubecl::cpu::CpuDevice;
+use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
 
 use crate::data::batch::{Batch, FrameBatcher};
