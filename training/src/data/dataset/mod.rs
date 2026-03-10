@@ -70,9 +70,7 @@ mod tests {
 
         let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
         let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
-        let color_jitter = Box::new(ColorJitter::<B, 3>::new(
-            batch_size, 3, 224, 224, 0.4, 0.4, 0.1, &device,
-        ));
+        let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
 
         let transforms: Vec<Box<dyn Augmentation<B>>> =
             vec![normalize, color_jitter, random_rotate];
