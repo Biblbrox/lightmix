@@ -1,17 +1,21 @@
 use burn::{data::dataloader::DataLoader, prelude::*};
 use polars::prelude::*;
 
-use crate::data::{
-    batch::{Batch, FrameBatcher},
-    dataloader::StreamingDataLoader,
-    mapper::LazyMapper,
-    strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
+use crate::{
+    augmentations::Pipeline,
+    data::{
+        batch::{Batch, FrameBatcher},
+        dataloader::StreamingDataLoader,
+        mapper::LazyMapper,
+        strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
+    },
 };
 
 pub struct StreamingDataLoaderBuilder<B: Backend> {
     batcher: Arc<dyn FrameBatcher<B>>,
     strategy: Option<Box<dyn FrameBatchStrategy>>,
     mapper: Option<LazyMapper>,
+    transforms: Option<Arc<Pipeline<B>>>,
     device: Option<B::Device>,
 }
 
@@ -21,6 +25,7 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
             batcher,
             strategy: None,
             mapper: None,
+            transforms: None,
             device: None,
         }
     }
@@ -35,6 +40,11 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
         self
     }
 
+    pub fn with_transforms(mut self, transforms: Arc<Pipeline<B>>) -> Self {
+        self.transforms = Some(transforms);
+        self
+    }
+
     pub fn with_device(mut self, device: B::Device) -> Self {
         self.device = Some(device);
         self
@@ -46,6 +56,8 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
             self.batcher,
             self.strategy
                 .unwrap_or(Box::new(FixedBatchStrategy::new(1))),
+            self.transforms
+                .unwrap_or(Arc::new(Pipeline::<B>::default())),
             self.device.unwrap_or_default(),
         ))
     }

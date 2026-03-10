@@ -1,4 +1,4 @@
-use std::{num::NonZero, sync::Arc};
+use std::{num::NonZero, rc::Rc, sync::Arc};
 
 use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},
@@ -6,15 +6,19 @@ use burn::{
 };
 use polars::prelude::*;
 
-use crate::data::{
-    batch::{Batch, FrameBatcher},
-    strategy::FrameBatchStrategy,
+use crate::{
+    augmentations::Pipeline,
+    data::{
+        batch::{Batch, FrameBatcher},
+        strategy::FrameBatchStrategy,
+    },
 };
 
 pub struct StreamingDataLoader<B: Backend> {
     dataset: LazyFrame,
     batcher: Arc<dyn FrameBatcher<B>>,
     strategy: Box<dyn FrameBatchStrategy>,
+    transforms: Arc<Pipeline<B>>,
     total_items: usize,
     device: B::Device,
 }
@@ -25,6 +29,7 @@ impl<B: Backend> Clone for StreamingDataLoader<B> {
             dataset: self.dataset.clone(),
             batcher: self.batcher.clone(),
             strategy: self.strategy.clone_dyn(),
+            transforms: self.transforms.clone(),
             total_items: self.total_items,
             device: self.device.clone(),
         }
@@ -36,6 +41,7 @@ impl<B: Backend> StreamingDataLoader<B> {
         dataset: impl Into<LazyFrame>,
         batcher: Arc<dyn FrameBatcher<B>>,
         strategy: Box<dyn FrameBatchStrategy>,
+        transforms: Arc<Pipeline<B>>,
         device: B::Device,
     ) -> Self {
         let dataset = dataset.into();
@@ -54,6 +60,7 @@ impl<B: Backend> StreamingDataLoader<B> {
             dataset,
             batcher,
             strategy,
+            transforms,
             total_items,
             device,
         }
@@ -69,6 +76,7 @@ where
             self.dataset.clone(),
             self.batcher.clone(),
             self.strategy.clone_dyn(),
+            self.transforms.clone(),
             self.total_items,
             self.device.clone(),
         ))
@@ -83,6 +91,7 @@ where
             self.dataset.clone(),
             self.batcher.clone(),
             self.strategy.clone_dyn(),
+            self.transforms.clone(),
             device.clone(),
         ))
     }
@@ -94,6 +103,7 @@ where
                 .slice(start as i64, (end - start) as u32),
             self.batcher.clone(),
             self.strategy.clone_dyn(),
+            self.transforms.clone(),
             self.device.clone(),
         ))
     }
@@ -104,6 +114,7 @@ pub struct StreamingDataLoaderIterator<B: Backend> {
     batcher: Arc<dyn FrameBatcher<B>>,
     strategy: Box<dyn FrameBatchStrategy>,
     current_batch: usize,
+    transforms: Arc<Pipeline<B>>,
     total_items: usize,
     device: B::Device,
 }
@@ -113,6 +124,7 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
         dataset: LazyFrame,
         batcher: Arc<dyn FrameBatcher<B>>,
         mut strategy: Box<dyn FrameBatchStrategy>,
+        transforms: Arc<Pipeline<B>>,
         total_items: usize,
         device: B::Device,
     ) -> Self {
@@ -130,6 +142,7 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
             batcher,
             strategy,
             current_batch: 0,
+            transforms,
             total_items,
             device,
         }
@@ -143,7 +156,10 @@ impl<B: Backend> Iterator for StreamingDataLoaderIterator<B> {
         self.current_batch += 1;
 
         if let Some(df) = self.strategy.batch() {
-            return Some(self.batcher.batch(df, &self.device));
+            return Some(
+                self.batcher
+                    .batch(df, self.transforms.clone(), &self.device),
+            );
         }
 
         None

@@ -1,7 +1,10 @@
 use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
 
-use crate::data::batch::{Batch, FrameBatcher};
+use crate::{
+    augmentations::Pipeline,
+    data::batch::{Batch, FrameBatcher},
+};
 
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "fine_label";
@@ -15,7 +18,7 @@ impl Cifar100Batcher {
 }
 
 impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
-    fn batch(&self, df: DataFrame, device: &B::Device) -> Batch<B> {
+    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
         // Image handling

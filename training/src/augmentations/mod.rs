@@ -6,7 +6,7 @@ pub mod colors;
 pub mod normalize;
 pub mod rotation;
 
-pub trait Augmentation<B: Backend> {
+pub trait Augmentation<B: Backend>: Send + Sync {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4>;
 }
 
@@ -19,6 +19,13 @@ impl<B: Backend> Pipeline<B> {
     pub fn new(transforms: Vec<Box<dyn Augmentation<B>>>) -> Pipeline<B> {
         Pipeline {
             transforms,
+            ph: PhantomData,
+        }
+    }
+
+    pub fn default() -> Pipeline<B> {
+        Pipeline {
+            transforms: vec![],
             ph: PhantomData,
         }
     }
@@ -56,7 +63,7 @@ mod tests {
         let std = [0.5, 0.5, 0.5];
         let mean = [0.5, 0.5, 0.5];
 
-        let normalize = Box::new(Normalize::<B, 3>::new(128, 3, 32, 32, std, mean, &device));
+        let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
         let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
         let color_jitter = Box::new(ColorJitter::<B, 3>::new(
             128, 3, 32, 32, 0.4, 0.4, 0.4, &device,

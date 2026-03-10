@@ -21,6 +21,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+    use crate::augmentations::colors::ColorJitter;
+    use crate::augmentations::normalize::Normalize;
+    use crate::augmentations::rotation::RandomAffine;
+    use crate::augmentations::{Augmentation, Pipeline};
+    use crate::data::batch;
     use crate::data::batch::cifar100::Cifar100Batcher;
     use crate::data::batch::imagenet1k::{ImageNet1kBatch, ImageNet1kBatcher};
     use crate::data::batch::mnist::MnistBatcher;
@@ -60,10 +65,24 @@ mod tests {
 
         let ds = ImageNet1kDataset::new(imagenet1k_path, crate::data::dataset::LazyFiletype::Arrow);
 
+        let std = [0.229, 0.224, 0.225];
+        let mean = [0.485, 0.456, 0.406];
+
+        let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
+        let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
+        let color_jitter = Box::new(ColorJitter::<B, 3>::new(
+            batch_size, 3, 224, 224, 0.4, 0.4, 0.1, &device,
+        ));
+
+        let transforms: Vec<Box<dyn Augmentation<B>>> =
+            vec![normalize, color_jitter, random_rotate];
+        let pipeline = Pipeline::new(transforms);
+
         let batcher = ImageNet1kBatcher::new();
         let strategy = BufferedBatchStrategy::new(batch_size, 10); //.with_mapper(Mapper::decoder());
         let dl = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
             .with_strategy(strategy.clone().with_shuffle(shuffle_seed))
+            .with_transforms(Arc::new(pipeline))
             .with_device(device)
             .build(ds.test());
 
