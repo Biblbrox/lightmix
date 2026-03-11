@@ -86,12 +86,6 @@ mod tests {
 
         let pbar = ProgressBar::new(dl.num_items() as u64);
         let start = Instant::now();
-        //for (idx, _df) in imagenet1k_train_dl.iter().enumerate() {
-        //    if idx >= 200 {
-        //        break;
-        //    }
-        //    pbar.inc(batch_size as u64);
-        //}
         for _df in dl.iter() {
             pbar.inc(batch_size as u64);
         }

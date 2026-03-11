@@ -20,13 +20,13 @@ impl<B: Backend, const C: usize> ColorJitter<B, C> {
         device: &B::Device,
     ) -> ColorJitter<B, C> {
         let mut rng = rand::rng();
-        let br = [1.0 + rng.random_range(-brightness..=brightness); C];
-        let ctr = [1.0 + rng.random_range(-contrast..=contrast); C];
-        let st = [1.0 + rng.random_range(-saturation..=saturation); C];
+        let br = [1.0 + rng.random_range(-brightness..=brightness); 1];
+        let ctr = [1.0 + rng.random_range(-contrast..=contrast); 1];
+        let st = [1.0 + rng.random_range(-saturation..=saturation); 1];
 
-        let brightness = Tensor::<B, 1>::from_floats(br, device).reshape([1, C, 1, 1]);
-        let contrast = Tensor::<B, 1>::from_floats(ctr, device).reshape([1, C, 1, 1]);
-        let saturation = Tensor::<B, 1>::from_floats(st, device).reshape([1, C, 1, 1]);
+        let brightness = Tensor::<B, 1>::from_floats(br, device).reshape([1, 1, 1, 1]);
+        let contrast = Tensor::<B, 1>::from_floats(ctr, device).reshape([1, 1, 1, 1]);
+        let saturation = Tensor::<B, 1>::from_floats(st, device).reshape([1, 1, 1, 1]);
 
         ColorJitter {
             brightness,
@@ -38,11 +38,21 @@ impl<B: Backend, const C: usize> ColorJitter<B, C> {
 }
 
 impl<B: Backend, const C: usize> Augmentation<B> for ColorJitter<B, C> {
+    // Input shape: [B, C, H, W]
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
         let shape = input.shape();
-        let brightness = self.brightness.clone().expand(shape.clone());
-        let contrast = self.contrast.clone().expand(shape.clone());
-        let saturation = self.saturation.clone().expand(shape.clone());
+        let brightness = self
+            .brightness
+            .clone()
+            .expand(Shape::new([shape[0], 1, shape[2], shape[3]]));
+        let contrast = self
+            .contrast
+            .clone()
+            .expand(Shape::new([shape[0], 1, shape[2], shape[3]]));
+        let saturation = self
+            .saturation
+            .clone()
+            .expand(Shape::new([shape[0], 1, shape[2], shape[3]]));
 
         // Adjust brightness
         let mut res = (input.clone() * brightness.clone()).clamp(0.0, 1.0);

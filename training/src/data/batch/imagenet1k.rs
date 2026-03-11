@@ -1,5 +1,6 @@
 use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
+use polars_arrow::array::{FixedSizeListArray, PrimitiveArray};
 
 use crate::{
     augmentations::Pipeline,
@@ -37,7 +38,6 @@ impl<B: Backend> FrameBatcher<B> for ImageNet1kBatcher {
             .into_no_null_iter()
             .for_each(|chunk| imagebuf.extend_from_slice(chunk));
 
-        // Label handling
         let labelbuf: Vec<i64> = df
             .column(LABELCOL)
             .unwrap()

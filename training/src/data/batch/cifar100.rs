@@ -36,19 +36,8 @@ impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
             .convert_dtype(DType::F32);
 
-        let mean = Tensor::<B, 1>::from_floats([0.5071, 0.4867, 0.4408], device)
-            .reshape([1, 3, 1, 1])
-            .expand([batch_size, 3, 32, 32]);
-
-        let std = Tensor::<B, 1>::from_floats([0.2675, 0.2565, 0.2761], device)
-            .reshape([1, 3, 1, 1])
-            .expand([batch_size, 3, 32, 32]);
-
-        let images = Tensor::<B, 4>::from_data(imagedata, device)
-            .swap_dims(1, -1)
-            .div_scalar(255)
-            .sub(mean)
-            .div(std);
+        let images =
+            transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1));
 
         // Label handling
         let labelbuf: Vec<i64> = df

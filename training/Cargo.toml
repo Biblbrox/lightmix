@@ -17,6 +17,7 @@ burn-cuda = "0.20.1"
 polars = { version = "0.53.0", features = [
   "async",
   "dtype-struct",
+  "dtype-array",
   "lazy",
   "ipc",
   "new_streaming",
@@ -33,3 +34,5 @@ tikv-jemallocator = "0.6.1"
 burn-wgpu = "0.20.1"
 burn-vision = "0.20.1"
 rand = "0.10.0"
+arrow2 = "0.18.0"
+polars-arrow = "0.53.0"

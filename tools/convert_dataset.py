@@ -3,6 +3,7 @@ import argparse
 from os import mkdir
 import io
 from os.path import exists, isfile
+import numpy as np
 from pathlib import Path
 
 import polars as pl
@@ -54,8 +55,8 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
 
 
 def convert(in_path: Path, out_path: Path, dataset):
-    parquet_train = in_path.joinpath("**/train*.parquet")
-    parquet_test = in_path.joinpath("**/test*.parquet")
+    parquet_train = in_path.joinpath("**/train-*.parquet")
+    parquet_test = in_path.joinpath("**/test-*.parquet")
     parquet_val = in_path.joinpath("**/val*.parquet")
 
     if exists(out_path) and isfile(out_path):

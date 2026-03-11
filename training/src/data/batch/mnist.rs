@@ -33,10 +33,7 @@ impl<B: Backend> FrameBatcher<B> for MnistBatcher {
             .collect();
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 1, 28, 28], DType::U8)
             .convert_dtype(DType::F32);
-        let images = Tensor::<B, 4>::from_data(imagedata, device)
-            .div_scalar(255)
-            .sub_scalar(0.1307)
-            .div_scalar(0.3081);
+        let images = transforms.execute(Tensor::<B, 4>::from_data(imagedata, device));
 
         // Label handling
         let labelbuf: Vec<i64> = df

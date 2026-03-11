@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use burn::{
     config::Config,
-    data::dataloader::DataLoader,
     module::Module,
     nn::loss::CrossEntropyLossConfig,
     optim::AdamWConfig,
@@ -14,6 +15,12 @@ use burn::{
 };
 
 use crate::{
+    augmentations::{
+        Augmentation, Pipeline,
+        colors::ColorJitter,
+        normalize::Normalize,
+        rotation::{Orientation, RandomAffine, RandomFlip},
+    },
     data::{
         batch::{
             Batch, cifar100::Cifar100Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
@@ -108,16 +115,30 @@ pub fn train<B: AutodiffBackend>(
 
     let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
-    let strategy = BufferedBatchStrategy::new(config.batch_size, 10); //.with_mapper(Mapper::decoder());
+    let strategy = BufferedBatchStrategy::new(config.batch_size, 100); //.with_mapper(Mapper::decoder());
+    // Imagenet1k normalize
+    //let std = [0.229, 0.224, 0.225];
+    //let mean = [0.485, 0.456, 0.406];
+
+    let std = [0.2675, 0.2565, 0.2761];
+    let mean = [0.5071, 0.4867, 0.4408];
+
+    let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
+    let random_flip = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
+    let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
+
+    let transforms: Vec<Box<dyn Augmentation<B>>> = vec![normalize, color_jitter]; //, random_flip];
+    let pipeline = Pipeline::new(transforms);
 
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
+        .with_transforms(Arc::new(pipeline))
         .build(ds.train());
-    let dataloader_test = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
+    let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
         .build(ds.validation());
 
-    let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_test)
+    let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_val)
         .metrics((AccuracyMetric::new(), LossMetric::new()))
         .with_file_checkpointer(CompactRecorder::new())
         .num_epochs(config.num_epochs)

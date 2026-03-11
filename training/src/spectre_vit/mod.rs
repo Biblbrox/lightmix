@@ -99,7 +99,7 @@ impl<B: Backend> SpectreLinear<B> {
         let feat = self
             .activation
             .forward(self.norm.forward(self.linear.forward(x.clone())));
-        return feat + self.avg_pool.forward(x);
+        feat + self.avg_pool.forward(x)
     }
 }
 
@@ -120,14 +120,12 @@ impl<B: Backend> SpectreEncoderLayer<B> {
             .norm1
             .forward(self.mix_layer.forward(x.clone(), encoder_num))
             + x;
-        let x = self.norm2.forward(x.clone() + self._ff_block(x.clone()));
-        return x;
+        self.norm2.forward(x.clone() + self._ff_block(x.clone()))
     }
 
     pub fn _ff_block(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let x = self.dropout1.forward(self.linear1.forward(x));
-        let x = self.dropout2.forward(self.linear2.forward(x));
-        return x;
+        self.dropout2.forward(self.linear2.forward(x))
     }
 }
 
@@ -159,11 +157,11 @@ impl<B: Backend> SpectreEncoder<B> {
             output = layer.forward(output, idx);
         }
 
-        if !self.norm.as_ref().is_none() {
+        if !self.norm.is_none() {
             output = self.norm.as_ref().unwrap().forward(output);
         }
 
-        return output + x.clone();
+        output + x.clone()
     }
 }
 

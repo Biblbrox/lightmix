@@ -35,7 +35,7 @@ impl<B: Backend> Augmentation<B> for RandomAffine<B> {
     }
 }
 
-enum Orientation {
+pub enum Orientation {
     Horizontal,
     Vertical,
 }

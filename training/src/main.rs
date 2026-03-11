@@ -18,10 +18,10 @@ use burn::{
     optim::AdamWConfig,
 };
 use burn_wgpu::{Wgpu, WgpuDevice};
-//use tikv_jemallocator::Jemalloc;
+use tikv_jemallocator::Jemalloc;
 
-//#[global_allocator]
-//static GLOBAL: Jemalloc = Jemalloc;
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
