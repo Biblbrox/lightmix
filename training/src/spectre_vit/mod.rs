@@ -96,10 +96,12 @@ pub struct SpectreViTConfig {
 
 impl<B: Backend> SpectreLinear<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let feat = self
-            .activation
-            .forward(self.norm.forward(self.linear.forward(x.clone())));
-        feat + self.avg_pool.forward(x)
+        //let feat = self
+        //    .activation
+        //    .forward(self.norm.forward(self.linear.forward(x.clone())));
+        //feat + self.avg_pool.forward(x)
+        self.activation
+            .forward(self.norm.forward(self.linear.forward(x)))
     }
 }
 
@@ -237,7 +239,13 @@ mod tests {
         profile::TimingMethod,
     };
 
-    use crate::spectre_vit::{benchmark::MHPermutMixBenchmark, embeddings::SpectrePatcherConfig};
+    use crate::{
+        spectre_vit::{
+            benchmark::{MHPermutMixBenchmark, SpectreViTBenchmark},
+            embeddings::SpectrePatcherConfig,
+        },
+        utils::print_bench_results,
+    };
 
     use super::*;
 
@@ -254,39 +262,17 @@ mod tests {
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
 
-    fn print_markdown_table(results: &[(u8, BenchmarkComputations)]) {
-        println!(
-            "| {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>12} |",
-            "num_heads", "mean (µs)", "median (µs)", "variance", "min (µs)", "max (µs)"
-        );
-        println!(
-            "|{:-^12}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|",
-            "", "", "", "", "", ""
-        );
-        for (heads, c) in results {
-            println!(
-                "| {:>10} | {:>12.2} | {:>12.2} | {:>12.2} | {:>12.2} | {:>12.2} |",
-                heads,
-                c.mean.as_micros(),
-                c.median.as_micros(),
-                c.variance.as_micros(),
-                c.min.as_micros(),
-                c.max.as_micros(),
-            );
-        }
-    }
-
     #[test]
     fn mh_permute_mix_bench() {
         type B = burn::backend::cuda::Cuda;
         let device = burn::backend::cuda::CudaDevice::default();
-        let batches = vec![8; 5];
-        let embed_dim = vec![64, 128, 256, 512, 1024];
-        let num_tokens = vec![65; 5];
-        let num_heads = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let out_channels = vec![64, 128, 256, 512, 1024];
+        let batches = [8; 5];
+        let embed_dim = [64, 128, 256, 512, 1024];
+        let num_tokens = [65; 5];
+        let num_heads = [1, 2, 3, 4, 5, 6, 7, 8];
+        let out_channels = [64, 128, 256, 512, 1024];
 
-        let mut results: Vec<(u8, BenchmarkComputations)> = Vec::new();
+        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for head in num_heads.into_iter() {
             let bench = MHPermutMixBenchmark::<B> {
                 batch_size: batches[0],
@@ -297,12 +283,57 @@ mod tests {
                 device: device.clone(),
             };
 
-            let bench_res = bench.run(TimingMethod::System).unwrap();
+            let bench_res = bench.run(TimingMethod::Device).unwrap();
             let computed = BenchmarkComputations::new(&bench_res);
-            results.push((head as u8, computed));
+            results.push((head as u32, computed));
         }
 
-        print_markdown_table(&results);
+        print_bench_results(&results, "num_heads");
+    }
+
+    #[test]
+    fn spectre_vit_bench() {
+        type B = burn::backend::cuda::Cuda;
+        let device = burn::backend::cuda::CudaDevice::default();
+
+        //type B = burn::backend::wgpu::Wgpu;
+        //let device = burn::backend::wgpu::WgpuDevice::default();
+        let batches = [8; 5];
+        let embed_dim = [64, 128, 256, 512, 1024];
+        let num_tokens = [65; 5];
+        let num_heads = [1, 2, 3, 4, 5, 6, 7, 8];
+        let out_channels = [64, 128, 256, 512, 1024];
+        let image_size: usize = 224;
+        let patch_size: usize = 16;
+        let num_patches: usize = (image_size / patch_size).pow(2);
+        let num_classes = 1000;
+        let hid_dim = 768;
+        let in_channels = 3;
+        let dropout = 0.5;
+
+        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        for head in num_heads.into_iter() {
+            let bench = SpectreViTBenchmark::<B> {
+                num_patches,
+                batch_size: batches[0],
+                embed_dim: embed_dim[0],
+                num_heads: head,
+                num_layers: num_tokens[0],
+                in_channels,
+                num_classes,
+                patch_size,
+                image_size,
+                hid_dim,
+                device: device.clone(),
+                dropout,
+            };
+
+            let bench_res = bench.run(TimingMethod::System).unwrap();
+            let computed = BenchmarkComputations::new(&bench_res);
+            results.push((head as u32, computed));
+        }
+
+        print_bench_results(&results, "num_heads");
     }
 
     #[test]

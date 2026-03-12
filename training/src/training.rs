@@ -133,9 +133,11 @@ pub fn train<B: AutodiffBackend>(
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
         .with_transforms(Arc::new(pipeline))
+        .with_device(device.clone())
         .build(ds.train());
     let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
+        .with_device(device.clone())
         .build(ds.validation());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_val)

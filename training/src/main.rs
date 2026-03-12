@@ -1,7 +1,9 @@
 #![recursion_limit = "2048"]
 
 mod model;
+mod norm;
 mod training;
+mod utils;
 
 mod augmentations;
 mod config;
@@ -17,16 +19,16 @@ use burn::{
     backend::{Autodiff, Cuda},
     optim::AdamWConfig,
 };
-use burn_wgpu::{Wgpu, WgpuDevice};
+use burn_wgpu::{Vulkan, Wgpu, WgpuDevice};
 use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
-    type MyBackend = Cuda<f32, i32>;
-    let device = burn::backend::cuda::CudaDevice::default();
-    //type MyBackend = Wgpu<f32, i32>;
-    //let device = burn::backend::wgpu::WgpuDevice::DiscreteGpu(0);
+    //type MyBackend = Cuda<f32, i32>;
+    //let device = burn::backend::cuda::CudaDevice::default();
+    type MyBackend = Vulkan<f32, i32>;
+    let device = burn::backend::wgpu::WgpuDevice::default();
 
     type MyAutodiffBackend = Autodiff<MyBackend>;
 

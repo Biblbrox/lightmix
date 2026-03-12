@@ -62,7 +62,6 @@ impl SpectrePatcherConfig {
 
 impl<B: Backend> SpectrePatchEmbedding<B> {
     pub fn forward(&self, images: Tensor<B, 4>) -> Tensor<B, 3> {
-        // TODO: Bug is here
         let patches = self.patcher.forward(images.clone()); // [batch_size, total_patch_dim, embed_dim]
         // Expand cls_token alongside batch dimension. Left other
         // dimensions untouched
