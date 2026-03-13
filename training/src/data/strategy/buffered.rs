@@ -14,17 +14,19 @@ pub struct BufferedBatchStrategy {
     recv: Option<Arc<Mutex<Receiver<Option<DataFrame>>>>>,
     mapper: Option<FrameMapper>,
     shuffle: Option<u64>,
+    num_workers: usize,
     batch_size: usize,
     buffer_size: usize,
 }
 impl BufferedBatchStrategy {
-    pub fn new(batch_size: usize, buffer_size: usize) -> Self {
+    pub fn new(batch_size: usize, buffer_size: usize, num_workers: usize) -> Self {
         Self {
             recv: None,
             mapper: None,
             shuffle: None,
             batch_size,
             buffer_size,
+            num_workers,
         }
     }
 
@@ -47,13 +49,14 @@ impl Clone for BufferedBatchStrategy {
             shuffle: self.shuffle,
             batch_size: self.batch_size,
             buffer_size: self.buffer_size,
+            num_workers: self.num_workers,
         }
     }
 }
 
 impl FrameBatchStrategy for BufferedBatchStrategy {
     fn init(&mut self, stream: CollectBatches) {
-        let source = Some(Arc::new(Mutex::new(stream)));
+        let source = Arc::new(Mutex::new(stream));
 
         let shuffle = self.shuffle;
         let mapper = self.mapper.clone();
@@ -61,24 +64,57 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
         let (tx, rx) = sync_channel(self.buffer_size);
         self.recv = Some(Arc::new(Mutex::new(rx)));
 
-        thread::spawn(move || {
-            let mut stream = source.as_ref().unwrap().lock().unwrap();
-            while let Some(mut batch) = stream.next().transpose().unwrap() {
-                if let Some(ref map) = mapper {
-                    batch = map(batch);
+        for _ in 0..self.num_workers {
+            let source = Arc::clone(&source);
+            let tx = tx.clone();
+            let mapper = mapper.clone();
+
+            thread::spawn(move || {
+                loop {
+                    let mut stream = source.as_ref().lock().unwrap();
+                    let maybe_batch = stream.next().transpose().unwrap();
+                    drop(stream);
+
+                    if let Some(mut batch) = maybe_batch {
+                        if let Some(ref map) = mapper {
+                            batch = map(batch);
+                        }
+
+                        if let Some(seed) = shuffle {
+                            batch = batch
+                                .sample_n_literal(batch.height(), false, true, Some(seed))
+                                .unwrap();
+                        }
+
+                        if tx.send(Some(batch)).is_err() {
+                            break;
+                        }
+                    } else {
+                        tx.send(None).unwrap_or(());
+                        break;
+                    }
                 }
+            });
+        }
 
-                if let Some(seed) = shuffle {
-                    batch = batch
-                        .sample_n_literal(batch.height(), false, true, Some(seed))
-                        .unwrap();
-                }
+        //thread::spawn(move || {
+        //    let mut stream = source.as_ref().unwrap().lock().unwrap();
+        //    while let Some(mut batch) = stream.next().transpose().unwrap() {
+        //        if let Some(ref map) = mapper {
+        //            batch = map(batch);
+        //        }
 
-                tx.send(Some(batch)).unwrap();
-            }
+        //        if let Some(seed) = shuffle {
+        //            batch = batch
+        //                .sample_n_literal(batch.height(), false, true, Some(seed))
+        //                .unwrap();
+        //        }
 
-            tx.send(None).unwrap();
-        });
+        //        tx.send(Some(batch)).unwrap();
+        //    }
+
+        //    tx.send(None).unwrap();
+        //});
     }
 
     fn batch(&mut self) -> Option<DataFrame> {

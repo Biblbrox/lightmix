@@ -22,6 +22,7 @@ pub struct Config {
     pub activation: String,
     pub num_encoders: i64,
     pub embed_dim: i64,
+    pub num_workers: i64,
 }
 
 impl Config {
@@ -72,6 +73,7 @@ impl Config {
                 .into(),
             num_encoders: config[dataset][model]["num_encoders"].as_integer().unwrap(),
             embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
+            num_workers: config["num_workers"].as_integer().unwrap(),
         }
     }
 

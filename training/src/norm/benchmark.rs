@@ -104,17 +104,13 @@ impl<B: Backend> Benchmark for LayerNormBenchmark<B> {
 
 #[cfg(test)]
 mod tests {
-    use burn::{Tensor, tensor::Shape};
     use cubecl::{
         benchmark::{Benchmark, BenchmarkComputations},
         profile::TimingMethod,
     };
 
     use crate::{
-        norm::{
-            DynamicERFConfig,
-            benchmark::{DerfBenchmark, LayerNormBenchmark},
-        },
+        norm::benchmark::{DerfBenchmark, LayerNormBenchmark},
         utils::print_bench_results,
     };
 

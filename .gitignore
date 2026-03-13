@@ -39,3 +39,7 @@ assets/*
 target
 Cargo.lock
 *.local.toml
+
+# Profiling
+*.ncu-rep
+*.log

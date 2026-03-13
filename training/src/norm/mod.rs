@@ -29,14 +29,9 @@ pub struct DynamicERFConfig {
 
 impl<B: Backend> DynamicERF<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let batch_size: i32 = x.dims()[0] as i32;
-        let alpha = self.alpha.val().expand([batch_size, -1, -1]);
-        let shift = self.shift.val().expand([batch_size, -1, -1]);
-        let x = alpha * x + shift;
-        let x = x.erf();
-        let weight = self.weight.val().expand([batch_size, -1, -1]);
-        let bias = self.bias.val().expand([batch_size, -1, -1]);
-        x * weight + bias
+        let x = self.alpha.val() * x + self.shift.val();
+        let erf = x.erf();
+        erf * self.weight.val() + self.bias.val()
     }
 }
 

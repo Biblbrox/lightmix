@@ -16,7 +16,7 @@ use crate::{
     config::Config, spectre_vit::SpectreViTConfig as ModelConfig, training::TrainingConfig,
 };
 use burn::{
-    backend::{Autodiff, Cuda},
+    backend::{Autodiff, Cuda, NdArray},
     optim::AdamWConfig,
 };
 use burn_wgpu::{Vulkan, Wgpu, WgpuDevice};
@@ -25,10 +25,10 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
-    //type MyBackend = Cuda<f32, i32>;
-    //let device = burn::backend::cuda::CudaDevice::default();
-    type MyBackend = Vulkan<f32, i32>;
-    let device = burn::backend::wgpu::WgpuDevice::default();
+    type MyBackend = Cuda<f32, i32>;
+    let device = burn::backend::cuda::CudaDevice::default();
+    //type MyBackend = Vulkan<f32, i32>;
+    //let device = burn::backend::wgpu::WgpuDevice::default();
 
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
@@ -78,7 +78,8 @@ fn main() {
         )
         .with_batch_size(config.batch_size as usize)
         .with_val_batch_size(config.val_batch_size as usize)
-        .with_num_epochs(config.epochs as usize),
+        .with_num_epochs(config.epochs as usize)
+        .with_num_workers(config.num_workers as usize),
         device.clone(),
     );
 

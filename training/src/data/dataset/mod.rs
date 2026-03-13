@@ -77,7 +77,7 @@ mod tests {
         let pipeline = Pipeline::new(transforms);
 
         let batcher = ImageNet1kBatcher::new();
-        let strategy = BufferedBatchStrategy::new(batch_size, 10); //.with_mapper(Mapper::decoder());
+        let strategy = BufferedBatchStrategy::new(batch_size, 10, 4); //.with_mapper(Mapper::decoder());
         let dl = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
             .with_strategy(strategy.clone().with_shuffle(shuffle_seed))
             .with_transforms(Arc::new(pipeline))
@@ -106,7 +106,7 @@ mod tests {
 
         let ds = Cifar100Dataset::new(cifar100_path, crate::data::dataset::LazyFiletype::Arrow);
         let batcher = Cifar100Batcher::new();
-        let strategy = BufferedBatchStrategy::new(batch_size, 10);
+        let strategy = BufferedBatchStrategy::new(batch_size, 10, 4);
 
         let dl = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
             .with_strategy(strategy.clone().with_shuffle(shuffle_seed))

@@ -62,18 +62,16 @@ impl SpectrePatcherConfig {
 
 impl<B: Backend> SpectrePatchEmbedding<B> {
     pub fn forward(&self, images: Tensor<B, 4>) -> Tensor<B, 3> {
-        let patches = self.patcher.forward(images.clone()); // [batch_size, total_patch_dim, embed_dim]
+        let batch_size = images.dims()[0] as i32;
+        let patches = self.patcher.forward(images); // [batch_size, total_patch_dim, embed_dim]
         // Expand cls_token alongside batch dimension. Left other
         // dimensions untouched
-        let cls_token_batch = self
-            .cls_token
-            .val()
-            .expand([images.dims()[0] as i32, -1, -1]);
+        let cls_token_batch = self.cls_token.val().expand([batch_size, -1, -1]);
         // Concatenate cls token and image patches
-        let x = Tensor::cat(Vec::from([cls_token_batch, patches]), 1);
+        let x = Tensor::cat(vec![cls_token_batch, patches], 1);
         let x = self.position_embeddings.val() + x;
-        let x = self.dropout.forward(x);
-        x // [batch_size, total_patch_dim + 1, embed_dim]
+        // [batch_size, total_patch_dim + 1, embed_dim]
+        self.dropout.forward(x)
     }
 }
 

@@ -42,7 +42,7 @@ type Mapper = Cifar100Mapper;
 
 //type Dataset = ImageNet1kDataset;
 //type Batcher = ImageNet1kBatcher;
-//type Mapper = Cifar100Mapper;
+//type Mapper = ImageNet1kMapper;
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -89,7 +89,7 @@ pub struct TrainingConfig {
     pub batch_size: usize,
     #[config(default = 128)]
     pub val_batch_size: usize,
-    #[config(default = 4)]
+    #[config(default = 16)]
     pub num_workers: usize,
     #[config(default = 42)]
     pub seed: u64,
@@ -115,7 +115,7 @@ pub fn train<B: AutodiffBackend>(
 
     let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
-    let strategy = BufferedBatchStrategy::new(config.batch_size, 100); //.with_mapper(Mapper::decoder());
+    let strategy = BufferedBatchStrategy::new(config.batch_size, 100, config.num_workers); //.with_mapper(Mapper::decoder());
     // Imagenet1k normalize
     //let std = [0.229, 0.224, 0.225];
     //let mean = [0.485, 0.456, 0.406];
@@ -124,19 +124,25 @@ pub fn train<B: AutodiffBackend>(
     let mean = [0.5071, 0.4867, 0.4408];
 
     let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
+    let normalize_val = Box::new(Normalize::<B::InnerBackend, 3>::new(std, mean, &device));
     let random_flip = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
     let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
 
-    let transforms: Vec<Box<dyn Augmentation<B>>> = vec![normalize, color_jitter]; //, random_flip];
-    let pipeline = Pipeline::new(transforms);
+    let transforms_train: Vec<Box<dyn Augmentation<B>>> =
+        vec![normalize.clone(), color_jitter, random_flip];
+    let pipeline_train = Pipeline::new(transforms_train);
+
+    let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val]; //, color_jitter]; //, random_flip];
+    let pipeline_val = Pipeline::<B::InnerBackend>::new(transforms_val);
 
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(config.seed))
-        .with_transforms(Arc::new(pipeline))
+        .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
         .build(ds.train());
     let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_strategy(strategy)
+        .with_transforms(Arc::new(pipeline_val))
         .with_device(device.clone())
         .build(ds.validation());
 

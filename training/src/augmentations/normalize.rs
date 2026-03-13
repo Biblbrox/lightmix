@@ -2,6 +2,7 @@ use burn::{Tensor, prelude::Backend};
 
 use crate::augmentations::Augmentation;
 
+#[derive(Clone)]
 pub struct Normalize<B: Backend, const C: usize> {
     mean: Tensor<B, 4>,
     std: Tensor<B, 4>,

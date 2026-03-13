@@ -14,16 +14,19 @@ use burn::{
     tensor::s,
 };
 
-use crate::spectre_vit::{
-    embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
-    permute::{MHPermutMix, MHPermutMixConfig},
+use crate::{
+    norm::{DynamicERF, DynamicERFConfig},
+    spectre_vit::{
+        embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
+        permute::{MHPermutMix, MHPermutMixConfig},
+    },
 };
 
 #[derive(Module, Debug)]
 pub struct SpectreLinear<B: Backend> {
     linear: Linear<B>,
     avg_pool: AdaptiveAvgPool1d,
-    norm: LayerNorm<B>,
+    norm: DynamicERF<B>,
     activation: Gelu,
 }
 
@@ -38,8 +41,8 @@ pub struct SpectreEncoderLayer<B: Backend> {
     linear1: SpectreLinear<B>,
     linear2: SpectreLinear<B>,
     mix_layer: MHPermutMix<B>,
-    norm1: LayerNorm<B>,
-    norm2: LayerNorm<B>,
+    norm1: DynamicERF<B>,
+    norm2: DynamicERF<B>,
 
     dropout1: Dropout,
     dropout2: Dropout,
@@ -59,7 +62,7 @@ pub struct SpectreEncoderLayerConfig {
 #[derive(Module, Debug)]
 pub struct SpectreEncoder<B: Backend> {
     encoder_layers: Vec<SpectreEncoderLayer<B>>,
-    norm: Option<LayerNorm<B>>,
+    norm: Option<DynamicERF<B>>,
 }
 
 #[derive(Config, Debug)]
@@ -77,7 +80,7 @@ pub struct SpectreEncoderConfig {
 pub struct SpectreViT<B: Backend> {
     embedding_block: SpectrePatchEmbedding<B>,
     encoder: SpectreEncoder<B>,
-    layer_norm: LayerNorm<B>,
+    layer_norm: DynamicERF<B>,
     linear: Linear<B>,
 }
 
@@ -96,12 +99,12 @@ pub struct SpectreViTConfig {
 
 impl<B: Backend> SpectreLinear<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        //let feat = self
-        //    .activation
-        //    .forward(self.norm.forward(self.linear.forward(x.clone())));
-        //feat + self.avg_pool.forward(x)
-        self.activation
-            .forward(self.norm.forward(self.linear.forward(x)))
+        let feat = self
+            .activation
+            .forward(self.norm.forward(self.linear.forward(x.clone())));
+        feat + self.avg_pool.forward(x)
+        //self.activation
+        //    .forward(self.norm.forward(self.linear.forward(x)))
     }
 }
 
@@ -109,7 +112,7 @@ impl SpectreLinearConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectreLinear<B> {
         SpectreLinear {
             linear: LinearConfig::new(self.in_channels, self.out_channels).init(device),
-            norm: LayerNormConfig::new(self.out_channels).init(device),
+            norm: DynamicERFConfig::new(self.out_channels, 0.5, 0.0).init(device),
             activation: Gelu::new(),
             avg_pool: AdaptiveAvgPool1dConfig::new(self.out_channels).init(),
         }
@@ -122,7 +125,7 @@ impl<B: Backend> SpectreEncoderLayer<B> {
             .norm1
             .forward(self.mix_layer.forward(x.clone(), encoder_num))
             + x;
-        self.norm2.forward(x.clone() + self._ff_block(x.clone()))
+        self.norm2.forward(x.clone() + self._ff_block(x))
     }
 
     pub fn _ff_block(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
@@ -144,8 +147,8 @@ impl SpectreEncoderLayerConfig {
                 self.num_encoders,
             )
             .init(device),
-            norm1: LayerNormConfig::new(self.embed_dim).init(device),
-            norm2: LayerNormConfig::new(self.embed_dim).init(device),
+            norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
+            norm2: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             dropout1: DropoutConfig::new(self.dropout).init(),
             dropout2: DropoutConfig::new(self.dropout).init(),
         }
@@ -159,11 +162,11 @@ impl<B: Backend> SpectreEncoder<B> {
             output = layer.forward(output, idx);
         }
 
-        if !self.norm.is_none() {
-            output = self.norm.as_ref().unwrap().forward(output);
+        if let Some(norm) = &self.norm {
+            output = norm.forward(output);
         }
 
-        output + x.clone()
+        output + x
     }
 }
 
@@ -223,7 +226,7 @@ impl SpectreViTConfig {
                 "relu".to_string(),
             )
             .init(device),
-            layer_norm: LayerNormConfig::new(self.embed_dim).init(device),
+            layer_norm: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             linear: LinearConfig::new(self.embed_dim, self.num_classes).init(device),
         }
     }
@@ -232,20 +235,8 @@ impl SpectreViTConfig {
 #[cfg(test)]
 mod tests {
     use burn::tensor::Shape;
-    use burn_cuda::Cuda;
-    use cubecl::{
-        benchmark::{Benchmark, BenchmarkComputations},
-        cuda::CudaRuntime,
-        profile::TimingMethod,
-    };
 
-    use crate::{
-        spectre_vit::{
-            benchmark::{MHPermutMixBenchmark, SpectreViTBenchmark},
-            embeddings::SpectrePatcherConfig,
-        },
-        utils::print_bench_results,
-    };
+    use crate::spectre_vit::embeddings::SpectrePatcherConfig;
 
     use super::*;
 
@@ -261,80 +252,6 @@ mod tests {
     const NUM_CHANNELS: usize = 1;
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
-
-    #[test]
-    fn mh_permute_mix_bench() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
-        let batches = [8; 5];
-        let embed_dim = [64, 128, 256, 512, 1024];
-        let num_tokens = [65; 5];
-        let num_heads = [1, 2, 3, 4, 5, 6, 7, 8];
-        let out_channels = [64, 128, 256, 512, 1024];
-
-        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        for head in num_heads.into_iter() {
-            let bench = MHPermutMixBenchmark::<B> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: device.clone(),
-            };
-
-            let bench_res = bench.run(TimingMethod::Device).unwrap();
-            let computed = BenchmarkComputations::new(&bench_res);
-            results.push((head as u32, computed));
-        }
-
-        print_bench_results(&results, "num_heads");
-    }
-
-    #[test]
-    fn spectre_vit_bench() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
-
-        //type B = burn::backend::wgpu::Wgpu;
-        //let device = burn::backend::wgpu::WgpuDevice::default();
-        let batches = [8; 5];
-        let embed_dim = [64, 128, 256, 512, 1024];
-        let num_tokens = [65; 5];
-        let num_heads = [1, 2, 3, 4, 5, 6, 7, 8];
-        let out_channels = [64, 128, 256, 512, 1024];
-        let image_size: usize = 224;
-        let patch_size: usize = 16;
-        let num_patches: usize = (image_size / patch_size).pow(2);
-        let num_classes = 1000;
-        let hid_dim = 768;
-        let in_channels = 3;
-        let dropout = 0.5;
-
-        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        for head in num_heads.into_iter() {
-            let bench = SpectreViTBenchmark::<B> {
-                num_patches,
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_layers: num_tokens[0],
-                in_channels,
-                num_classes,
-                patch_size,
-                image_size,
-                hid_dim,
-                device: device.clone(),
-                dropout,
-            };
-
-            let bench_res = bench.run(TimingMethod::System).unwrap();
-            let computed = BenchmarkComputations::new(&bench_res);
-            results.push((head as u32, computed));
-        }
-
-        print_bench_results(&results, "num_heads");
-    }
 
     #[test]
     fn test_patcher() {
