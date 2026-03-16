@@ -45,7 +45,8 @@ fn main() {
         );
     }
     let dataset = "cifar100";
-    let config = Config::parse(&path, dataset, "model", Some(&localpath));
+    let model_name = "spectre_vit";
+    let config = Config::parse(&path, dataset, model_name, Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());
     let dataset_path_buf = PathBuf::from(config.cache_dir.as_str()).join(dataset);
     if !dataset_path_buf.exists() {
@@ -58,9 +59,17 @@ fn main() {
     println!("Loading dataset from path {}", dataset_path);
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
-    let artifact_dir = "./assets";
+    let artifact_dir = format!(
+        "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}",
+        model_name,
+        dataset,
+        config.num_heads,
+        config.hidden_dim,
+        config.embed_dim,
+        config.num_encoders
+    );
     crate::training::train::<MyAutodiffBackend>(
-        artifact_dir,
+        &artifact_dir,
         dataset_path,
         TrainingConfig::new(
             ModelConfig::new(

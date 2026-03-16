@@ -9,7 +9,7 @@ num_classes = 1000
 img_size = 224
 in_channels = 3
 
-[imagenet1k.model]
+[imagenet1k.spectre_vit]
 batch_size = 32
 val_batch_size = 64
 epochs = 100
@@ -28,7 +28,7 @@ num_classes = 100
 img_size = 32
 in_channels = 3
 
-[cifar100.model]
+[cifar100.spectre_vit]
 batch_size = 8
 val_batch_size = 512
 epochs = 20
@@ -47,7 +47,7 @@ img_size = 28
 num_classes = 10
 in_channels = 1
 
-[mnist.model]
+[mnist.spectre_vit]
 batch_size = 8
 val_batch_size = 512
 epochs = 10

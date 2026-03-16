@@ -1,5 +1,5 @@
 use burn::{
-    module::{Module, Parameter},
+    module::{Module, Param, Parameter},
     nn::{Linear, LinearConfig},
     prelude::*,
     tensor::Distribution,
@@ -86,6 +86,7 @@ use rand::{rngs, seq::SliceRandom};
 pub struct Permuter<B: Backend> {
     signs: Vec<Tensor<B, 3>>,
     perms: Vec<Tensor<B, 1, Int>>,
+    params: Vec<Param<Tensor<B, 3>>>,
     num_heads: usize,
 }
 
@@ -112,9 +113,17 @@ impl<B: Backend> Permuter<B> {
 
         // [B, N * H, E]
         let x = x.select(1, perms);
+        debug_assert_eq!(
+            x.shape(),
+            Shape::new([shape[0], shape[1] * self.num_heads, shape[2]])
+        );
 
         // [B, N * H, E]
-        let x = x * signs;
+        let x = x * signs + self.params[encoder_num].val();
+        debug_assert_eq!(
+            x.shape(),
+            Shape::new([shape[0], shape[1] * self.num_heads, shape[2]])
+        );
 
         // [B, N, E * H]
         x.reshape([shape[0], shape[1], shape[2] * self.num_heads])
@@ -127,38 +136,43 @@ impl PermuterConfig {
         let d = self.seq_length;
         let mut perms_per_encoder = Vec::<Tensor<B, 1, Int>>::new();
         let mut sign_per_encoder = Vec::<Tensor<B, 3>>::new();
+        let mut params_per_encoder = Vec::<Param<Tensor<B, 3>>>::new();
         (0..self.num_encoders).for_each(|_| {
             let mut sign_per_head = Vec::<Tensor<B, 3>>::new();
             let mut perms_per_head = Vec::<Tensor<B, 1, Int>>::new();
+            let mut params_per_head = Vec::<Tensor<B, 3>>::new();
             (0..self.num_heads).for_each(|_| {
                 let rand_indices = Tensor::<B, 1>::random(
                     Shape::new([d]),
                     Distribution::Uniform(0.0, 1.0),
                     device,
                 )
-                .argsort(0)
-                .set_require_grad(false);
+                .argsort(0);
 
                 perms_per_head.push(rand_indices);
                 sign_per_head.push(
                     Tensor::<B, 1>::random([d], distribution, device)
                         .sign()
-                        .set_require_grad(false)
                         .unsqueeze::<2>()
                         .unsqueeze::<3>()
                         .reshape([1, d, 1]),
-                )
+                );
+                params_per_head.push(Tensor::<B, 3>::zeros([1, d, 1], device));
             });
             perms_per_encoder.push(Tensor::cat(perms_per_head, 0));
             sign_per_encoder.push(Tensor::cat(sign_per_head, 1));
+            params_per_encoder.push(
+                Param::<Tensor<B, 3>>::from_tensor(Tensor::cat(params_per_head, 1))
+                    .set_require_grad(true),
+            );
         });
 
         Permuter {
             signs: sign_per_encoder,
             perms: perms_per_encoder,
+            params: params_per_encoder,
             num_heads: self.num_heads,
         }
-        .no_grad()
     }
 }
 

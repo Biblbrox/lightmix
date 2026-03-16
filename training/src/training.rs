@@ -1,16 +1,20 @@
 use std::sync::Arc;
 
 use burn::{
+    backend::autodiff::checkpoint::strategy::CheckpointStrategy,
     config::Config,
     module::Module,
     nn::loss::CrossEntropyLossConfig,
     optim::AdamWConfig,
     prelude::Backend,
-    record::CompactRecorder,
+    record::{CompactRecorder, DefaultRecorder},
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
-        metric::{AccuracyMetric, LossMetric},
+        checkpoint::CheckpointingStrategy,
+        metric::{
+            AccuracyMetric, CpuMemory, CpuTemperature, CudaMetric, LossMetric, TopKAccuracyMetric,
+        },
     },
 };
 
@@ -98,7 +102,7 @@ pub struct TrainingConfig {
 }
 
 pub fn train<B: AutodiffBackend>(
-    artifact_dir: &str,
+    artifact_dir: &String,
     data_dir: &str,
     config: TrainingConfig,
     device: B::Device,
@@ -129,10 +133,10 @@ pub fn train<B: AutodiffBackend>(
     let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
 
     let transforms_train: Vec<Box<dyn Augmentation<B>>> =
-        vec![normalize.clone(), color_jitter, random_flip];
+        vec![normalize, color_jitter, random_flip];
     let pipeline_train = Pipeline::new(transforms_train);
 
-    let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val]; //, color_jitter]; //, random_flip];
+    let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val];
     let pipeline_val = Pipeline::<B::InnerBackend>::new(transforms_val);
 
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
@@ -147,8 +151,14 @@ pub fn train<B: AutodiffBackend>(
         .build(ds.validation());
 
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_val)
-        .metrics((AccuracyMetric::new(), LossMetric::new()))
-        .with_file_checkpointer(CompactRecorder::new())
+        .metrics((
+            AccuracyMetric::new(),
+            LossMetric::new(),
+            TopKAccuracyMetric::new(5),
+            CpuTemperature::new(),
+            CpuMemory::new(),
+        ))
+        .with_file_checkpointer(DefaultRecorder::new())
         .num_epochs(config.num_epochs)
         .summary();
 
