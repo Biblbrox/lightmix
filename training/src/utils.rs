@@ -1,6 +1,7 @@
 use cubecl::benchmark::BenchmarkComputations;
 
-pub fn print_bench_results(results: &[(u32, BenchmarkComputations)], field: &str) {
+pub fn print_bench_results(title: &str, results: &[(u32, BenchmarkComputations)], field: &str) {
+    println!("| {:-^1$} |", title, 85);
     println!("| {:-<1$} |", "", 85);
     println!(
         "| {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>12} |",
@@ -22,4 +23,5 @@ pub fn print_bench_results(results: &[(u32, BenchmarkComputations)], field: &str
         );
     }
     println!("| {:-<1$} |", "", 85);
+    println!("");
 }

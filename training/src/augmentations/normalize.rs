@@ -22,7 +22,7 @@ impl<B: Backend, const C: usize> Augmentation<B> for Normalize<B, C> {
         let shape = input.shape();
         let mean: Tensor<B, 4> = self.mean.clone().expand(shape.clone());
         let std: Tensor<B, 4> = self.std.clone().expand(shape);
-        input.div_scalar(255).sub(mean).div(std)
+        input.sub(mean).div(std)
     }
 }
 

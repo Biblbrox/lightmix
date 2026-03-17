@@ -1,13 +1,10 @@
-use std::marker::PhantomData;
-
 use burn::{
     Tensor,
     nn::{LayerNorm, LayerNormConfig},
     prelude::Backend,
     tensor::Distribution,
 };
-use burn_tensor::Shape;
-use cubecl::{benchmark::Benchmark, future};
+use cubecl::benchmark::Benchmark;
 
 use crate::norm::{DynamicERF, DynamicERFConfig};
 
@@ -153,9 +150,7 @@ mod tests {
             layer_norm_results.push((embed as u32, computed));
         }
 
-        println!("{:?}", "ERF results");
-        print_bench_results(&erf_results, "embed_dim");
-        println!("{:?}", "LayerNorm results");
-        print_bench_results(&layer_norm_results, "embed_dim");
+        print_bench_results("ERF", &erf_results, "embed_dim");
+        print_bench_results("LayerNorm", &layer_norm_results, "embed_dim");
     }
 }

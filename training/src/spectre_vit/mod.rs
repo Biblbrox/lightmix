@@ -18,7 +18,7 @@ use crate::{
     norm::{DynamicERF, DynamicERFConfig},
     spectre_vit::{
         embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
-        permute::{MHPermutMix, MHPermutMixConfig},
+        permute::{MHPermutMix, MHPermutMixConfig, MHPermutMixMatrix, MHPermutMixMatrixConfig},
     },
 };
 
@@ -40,7 +40,7 @@ pub struct SpectreLinearConfig {
 pub struct SpectreEncoderLayer<B: Backend> {
     linear1: SpectreLinear<B>,
     linear2: SpectreLinear<B>,
-    mix_layer: MHPermutMix<B>,
+    mix_layer: MHPermutMixMatrix<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
@@ -120,11 +120,8 @@ impl SpectreLinearConfig {
 }
 
 impl<B: Backend> SpectreEncoderLayer<B> {
-    pub fn forward(&self, x: Tensor<B, 3>, encoder_num: usize) -> Tensor<B, 3> {
-        let x = self
-            .norm1
-            .forward(self.mix_layer.forward(x.clone(), encoder_num))
-            + x;
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let x = self.norm1.forward(self.mix_layer.forward(x.clone())) + x;
         self.norm2.forward(x.clone() + self._ff_block(x))
     }
 
@@ -139,7 +136,7 @@ impl SpectreEncoderLayerConfig {
         SpectreEncoderLayer {
             linear1: SpectreLinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
             linear2: SpectreLinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
-            mix_layer: MHPermutMixConfig::new(
+            mix_layer: MHPermutMixMatrixConfig::new(
                 self.embed_dim,
                 self.seq_length,
                 self.num_heads,
@@ -158,8 +155,8 @@ impl SpectreEncoderLayerConfig {
 impl<B: Backend> SpectreEncoder<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let mut output = x.clone();
-        for (idx, layer) in self.encoder_layers.iter().enumerate() {
-            output = layer.forward(output, idx);
+        for layer in self.encoder_layers.iter() {
+            output = layer.forward(output);
         }
 
         if let Some(norm) = &self.norm {

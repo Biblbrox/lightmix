@@ -120,7 +120,7 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
     fn batch(&mut self) -> Option<DataFrame> {
         let comm = self.recv.as_ref().unwrap().lock().unwrap();
 
-        comm.recv().unwrap()
+        comm.recv().unwrap_or(None)
     }
 
     fn batch_size(&self) -> usize {

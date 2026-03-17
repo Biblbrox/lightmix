@@ -1,4 +1,4 @@
-use std::{num::NonZero, rc::Rc, sync::Arc};
+use std::{num::NonZero, sync::Arc};
 
 use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},

@@ -13,7 +13,8 @@ use burn::{
         ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
         checkpoint::CheckpointingStrategy,
         metric::{
-            AccuracyMetric, CpuMemory, CpuTemperature, CudaMetric, LossMetric, TopKAccuracyMetric,
+            AccuracyMetric, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric, LossMetric,
+            TopKAccuracyMetric,
         },
     },
 };
@@ -129,11 +130,13 @@ pub fn train<B: AutodiffBackend>(
 
     let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
     let normalize_val = Box::new(Normalize::<B::InnerBackend, 3>::new(std, mean, &device));
-    let random_flip = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
+    let random_flip_hor = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
+    let random_flip_ver = Box::new(RandomFlip::<B>::new(0.5, Orientation::Vertical));
+    let random_affine = Box::new(RandomAffine::<B>::new(0.5, 30.0));
     let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
 
     let transforms_train: Vec<Box<dyn Augmentation<B>>> =
-        vec![normalize, color_jitter, random_flip];
+        vec![random_flip_hor, color_jitter, random_affine, normalize]; //, color_jitter, random_flip_hor, random_flip_ver];
     let pipeline_train = Pipeline::new(transforms_train);
 
     let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val];
@@ -156,6 +159,7 @@ pub fn train<B: AutodiffBackend>(
             LossMetric::new(),
             TopKAccuracyMetric::new(5),
             CpuTemperature::new(),
+            LearningRateMetric::new(),
             CpuMemory::new(),
         ))
         .with_file_checkpointer(DefaultRecorder::new())

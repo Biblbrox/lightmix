@@ -2,12 +2,8 @@ use burn::{
     Tensor,
     config::Config,
     module::{Module, Param},
-    nn::{
-        Dropout, DropoutConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig,
-        pool::{AdaptiveAvgPool1d, AdaptiveAvgPool1dConfig},
-    },
     prelude::Backend,
-    tensor::{Shape, s},
+    tensor::Shape,
 };
 mod benchmark;
 

@@ -4,6 +4,7 @@ use cubecl::{benchmark::Benchmark, future};
 use crate::spectre_vit::{
     MHPermutMix, MHPermutMixConfig, SpectreViT, SpectreViTConfig,
     embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
+    permute::{MHPermutMixMatrix, MHPermutMixMatrixConfig},
 };
 
 pub struct SpectreViTBenchmark<B: Backend> {
@@ -175,6 +176,56 @@ impl<B: Backend> Benchmark for MHPermutMixBenchmark<B> {
     }
 }
 
+pub struct MHPermutMixMatrixBenchmark<B: Backend> {
+    pub embed_dim: usize,
+    pub num_tokens: usize,
+    pub batch_size: usize,
+    pub num_heads: usize,
+    pub out_channels: usize,
+    pub device: B::Device,
+}
+
+impl<B: Backend> Benchmark for MHPermutMixMatrixBenchmark<B> {
+    type Input = (Tensor<B, 3>, MHPermutMixMatrix<B>);
+    type Output = Tensor<B, 3>;
+
+    fn prepare(&self) -> Self::Input {
+        (
+            Tensor::<B, 3>::random(
+                [self.batch_size, self.num_tokens, self.embed_dim],
+                Distribution::Default,
+                &self.device,
+            ),
+            MHPermutMixMatrixConfig::new(
+                self.embed_dim,
+                self.num_tokens,
+                self.num_heads,
+                self.out_channels,
+                1,
+            )
+            .init(&self.device),
+        )
+    }
+
+    fn name(&self) -> String {
+        format!(
+            "MHPermutMixMatrix-{:?}x{:?}x{:?} {:?} heads",
+            self.batch_size, self.num_tokens, self.embed_dim, self.num_heads
+        )
+        .to_lowercase()
+    }
+
+    fn sync(&self) {
+        B::sync(&self.device).unwrap();
+    }
+
+    fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
+        let (tensor, mh_permut) = input;
+        let res = mh_permut.forward(tensor);
+        Ok(res)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use burn::backend::Autodiff;
@@ -185,7 +236,8 @@ mod tests {
 
     use crate::{
         spectre_vit::benchmark::{
-            MHPermutMixBenchmark, SpectrePatchEmbeddingBenchmark, SpectreViTBenchmark,
+            MHPermutMixBenchmark, MHPermutMixMatrixBenchmark, SpectrePatchEmbeddingBenchmark,
+            SpectreViTBenchmark,
         },
         utils::print_bench_results,
     };
@@ -217,23 +269,39 @@ mod tests {
             results.push((embed as u32, computed));
         }
 
-        print_bench_results(&results, "embed_dim");
+        print_bench_results("SpectrePatcher", &results, "embed_dim");
     }
 
     #[test]
     fn mh_permute_mix_bench() {
         type B = burn::backend::cuda::Cuda;
         type MyAutodiffBackend = Autodiff<B>;
+
+        type CpuB = burn::backend::ndarray::NdArray;
+        type CpuAutodiffBackend = Autodiff<CpuB>;
+
         let device = burn::backend::cuda::CudaDevice::default();
-        let batches = [8; 5];
+        let cpu_device = burn::backend::ndarray::NdArrayDevice::default();
+
+        let batches = [64; 5];
         let embed_dim = [64, 128, 256, 512, 1024];
         let num_tokens = [65; 5];
         let num_heads = [1, 2, 3, 4, 5, 6, 7, 8];
         let out_channels = [64, 128, 256, 512, 1024];
 
-        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        // GPU tests
+        let mut results_gpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_matrix_gpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for head in num_heads.into_iter() {
             let bench = MHPermutMixBenchmark::<MyAutodiffBackend> {
+                batch_size: batches[0],
+                embed_dim: embed_dim[0],
+                num_heads: head,
+                num_tokens: num_tokens[0],
+                out_channels: out_channels[0],
+                device: device.clone(),
+            };
+            let bench_matrix = MHPermutMixMatrixBenchmark::<MyAutodiffBackend> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
@@ -244,10 +312,51 @@ mod tests {
 
             let bench_res = bench.run(TimingMethod::Device).unwrap();
             let computed = BenchmarkComputations::new(&bench_res);
-            results.push((head as u32, computed));
+
+            let bench_res_matrix = bench_matrix.run(TimingMethod::Device).unwrap();
+            let computed_matrix = BenchmarkComputations::new(&bench_res_matrix);
+            results_gpu.push((head as u32, computed));
+            results_matrix_gpu.push((head as u32, computed_matrix));
         }
 
-        print_bench_results(&results, "num_heads");
+        // CPU tests
+        let mut results_cpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_matrix_cpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        for head in num_heads.into_iter() {
+            let bench = MHPermutMixBenchmark::<CpuAutodiffBackend> {
+                batch_size: batches[0],
+                embed_dim: embed_dim[0],
+                num_heads: head,
+                num_tokens: num_tokens[0],
+                out_channels: out_channels[0],
+                device: cpu_device,
+            };
+            let bench_matrix = MHPermutMixMatrixBenchmark::<CpuAutodiffBackend> {
+                batch_size: batches[0],
+                embed_dim: embed_dim[0],
+                num_heads: head,
+                num_tokens: num_tokens[0],
+                out_channels: out_channels[0],
+                device: cpu_device,
+            };
+
+            let bench_res = bench.run(TimingMethod::Device).unwrap();
+            let computed = BenchmarkComputations::new(&bench_res);
+
+            let bench_res_matrix = bench_matrix.run(TimingMethod::Device).unwrap();
+            let computed_matrix = BenchmarkComputations::new(&bench_res_matrix);
+            results_cpu.push((head as u32, computed));
+            results_matrix_cpu.push((head as u32, computed_matrix));
+        }
+
+        print_bench_results("MHPermutMix (GPU)", &results_gpu, "num_heads");
+        print_bench_results("MHPermutMixMatrix (GPU)", &results_matrix_gpu, "num_heads");
+        print_bench_results("MHPermutMix (NdArray)", &results_cpu, "num_heads");
+        print_bench_results(
+            "MHPermutMixMatrix (NdArray)",
+            &results_matrix_cpu,
+            "num_heads",
+        );
     }
 
     #[test]
@@ -292,6 +401,6 @@ mod tests {
             results.push((head as u32, computed));
         }
 
-        print_bench_results(&results, "num_heads");
+        print_bench_results("SpectreViT", &results, "num_heads");
     }
 }

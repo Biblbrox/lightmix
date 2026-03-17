@@ -83,12 +83,16 @@ fn main() {
                 config.hidden_dim as usize,
                 config.dropout,
             ),
-            AdamWConfig::new(),
+            AdamWConfig::new()
+                .with_weight_decay(config.adam_weight_decay as f32)
+                .with_beta_1(config.adam_betas[0] as f32)
+                .with_beta_2(config.adam_betas[1] as f32),
         )
         .with_batch_size(config.batch_size as usize)
         .with_val_batch_size(config.val_batch_size as usize)
         .with_num_epochs(config.epochs as usize)
-        .with_num_workers(config.num_workers as usize),
+        .with_num_workers(config.num_workers as usize)
+        .with_learning_rate(config.learning_rate),
         device.clone(),
     );
 
