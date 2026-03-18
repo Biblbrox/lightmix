@@ -3,6 +3,10 @@ use std::sync::Arc;
 use burn::{
     backend::autodiff::checkpoint::strategy::CheckpointStrategy,
     config::Config,
+    lr_scheduler::{
+        cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig},
+        linear::LinearLrSchedulerConfig,
+    },
     module::Module,
     nn::loss::CrossEntropyLossConfig,
     optim::AdamWConfig,
@@ -18,11 +22,12 @@ use burn::{
         },
     },
 };
+use cubecl::num_traits::Pow;
 
 use crate::{
     augmentations::{
         Augmentation, Pipeline,
-        colors::ColorJitter,
+        colors::{ColorJitter, RandomGrayscale},
         normalize::Normalize,
         rotation::{Orientation, RandomAffine, RandomFlip},
     },
@@ -133,10 +138,16 @@ pub fn train<B: AutodiffBackend>(
     let random_flip_hor = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
     let random_flip_ver = Box::new(RandomFlip::<B>::new(0.5, Orientation::Vertical));
     let random_affine = Box::new(RandomAffine::<B>::new(0.5, 30.0));
-    let color_jitter = Box::new(ColorJitter::<B, 3>::new(0.4, 0.4, 0.1, &device));
+    let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.1, &device));
+    let random_gray = Box::new(RandomGrayscale::<B>::new(0.5, &device));
 
-    let transforms_train: Vec<Box<dyn Augmentation<B>>> =
-        vec![random_flip_hor, color_jitter, random_affine, normalize]; //, color_jitter, random_flip_hor, random_flip_ver];
+    let transforms_train: Vec<Box<dyn Augmentation<B>>> = vec![
+        random_flip_hor,
+        color_jitter,
+        random_gray,
+        random_affine,
+        normalize,
+    ]; //, color_jitter, random_flip_hor, random_flip_ver];
     let pipeline_train = Pipeline::new(transforms_train);
 
     let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val];
@@ -170,7 +181,13 @@ pub fn train<B: AutodiffBackend>(
     let result = learner.launch(Learner::new(
         model,
         config.optimizer.init(),
-        config.learning_rate,
+        LinearLrSchedulerConfig::new(
+            config.learning_rate,
+            config.learning_rate / 10.0,
+            config.num_epochs * config.batch_size,
+        )
+        .init()
+        .unwrap(),
     ));
 
     result

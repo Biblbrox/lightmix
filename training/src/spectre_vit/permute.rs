@@ -87,8 +87,10 @@ impl<B: Backend> PermuterMatrix<B> {
         let x = x.gather(2, idx);
         // [B, N * H * E]
         let signs = self.signs.clone();
-        let x = x * signs;
-        x.reshape([shape[0], shape[1], shape[2] * self.num_heads]) + self.params.val()
+        //let x = x * signs;
+        let x = x.mul(self.params.val()).sin() * signs;
+        //x.reshape([shape[0], shape[1], shape[2] * self.num_heads]) + self.params.val()
+        x.reshape([shape[0], shape[1], shape[2] * self.num_heads])
         //x.reshape([shape[0], self.num_heads, shape[1], shape[2]])
         //    .swap_dims(1, 2)
         //    .reshape([shape[0], shape[1], self.num_heads * shape[2]])
@@ -137,9 +139,11 @@ impl PermuterMatrixConfig {
         let perms = Tensor::cat(perms_per_head, 1);
         let signs = Tensor::cat(sign_per_head, 1).unsqueeze();
         let params = Param::from_tensor(
-            Tensor::<B, 1>::zeros(Shape::new([self.num_heads * self.embed_dim]), device)
-                .unsqueeze_dim::<2>(0)
-                .unsqueeze_dim::<3>(0),
+            Tensor::<B, 2>::ones(
+                Shape::new([self.num_heads, self.embed_dim * self.seq_length]),
+                device,
+            )
+            .unsqueeze_dim::<3>(0),
         )
         .set_require_grad(true);
 
