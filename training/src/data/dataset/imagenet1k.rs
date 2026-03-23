@@ -64,7 +64,7 @@ impl LazyDataset for ImageNet1kDataset {
     fn train(&self) -> LazyFrame {
         let path = match self.train_subpath {
             Some(ref subpath) => self.uri.join(subpath),
-            None => self.uri.join("**/train-*.*"),
+            None => self.uri.join("**/train*.*"),
         };
 
         match self.ft {
@@ -102,7 +102,7 @@ impl LazyDataset for ImageNet1kDataset {
     fn test(&self) -> LazyFrame {
         let path = match self.test_subpath {
             Some(ref subpath) => self.uri.join(subpath),
-            None => self.uri.join("**/test-*.*"),
+            None => self.uri.join("**/test*.*"),
         };
 
         match self.ft {

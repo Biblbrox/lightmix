@@ -1,6 +1,5 @@
 use burn::{prelude::*, tensor::DType};
 use polars::prelude::*;
-use polars_arrow::array::{FixedSizeListArray, PrimitiveArray};
 
 use crate::{
     augmentations::Pipeline,
@@ -50,7 +49,7 @@ impl<B: Backend> FrameBatcher<B> for ImageNet1kBatcher {
             .convert_dtype(DType::F32);
 
         let images =
-            transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1));
+            transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1).div_scalar(255));
 
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 

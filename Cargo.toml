@@ -2,5 +2,6 @@
 resolver = "3"
 members = ["training"]
 
-[profile.release]
-debug = true
+# [profile.release]
+# debug = true
+# lto = "thin"

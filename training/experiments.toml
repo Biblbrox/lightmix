@@ -22,6 +22,8 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 4
 embed_dim = 512
+continue_training = false
+resume_epoch = 1
 
 [cifar100]
 num_classes = 100
@@ -41,6 +43,8 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 4
 embed_dim = 512
+continue_training = false
+resume_epoch = 1
 
 [mnist]
 img_size = 28
@@ -60,3 +64,5 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 4
 embed_dim = 16
+continue_training = false
+resume_epoch = 1

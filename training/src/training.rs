@@ -4,22 +4,18 @@ use burn::{
     backend::autodiff::checkpoint::strategy::CheckpointStrategy,
     config::Config,
     lr_scheduler::{
-        cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig},
-        linear::LinearLrSchedulerConfig,
+        LrScheduler, cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig}, linear::{LinearLrScheduler, LinearLrSchedulerConfig}
     },
     module::Module,
-    nn::loss::CrossEntropyLossConfig,
-    optim::AdamWConfig,
+    nn::{LinearRecord, loss::CrossEntropyLossConfig},
+    optim::{AdamWConfig, Optimizer, adaptor::OptimizerAdaptor},
     prelude::Backend,
-    record::{CompactRecorder, DefaultRecorder},
+    record::{CompactRecorder, DefaultRecorder, FullPrecisionSettings, NamedMpkFileRecorder, Record, Recorder},
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
-        ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
-        checkpoint::CheckpointingStrategy,
-        metric::{
-            AccuracyMetric, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric, LossMetric,
-            TopKAccuracyMetric,
-        },
+        ClassificationOutput, EarlyStoppingStrategy, InferenceStep, Learner, LearnerOptimizerRecord, MetricEarlyStoppingStrategy, StoppingCondition, SupervisedTraining, TrainOutput, TrainStep, TrainingStrategy, checkpoint::CheckpointingStrategy, metric::{
+            AccuracyMetric, Adaptor, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric, LossMetric, Metric, TopKAccuracyMetric
+        }
     },
 };
 use cubecl::num_traits::Pow;
@@ -105,6 +101,10 @@ pub struct TrainingConfig {
     pub seed: u64,
     #[config(default = 1.0e-4)]
     pub learning_rate: f64,
+    #[config(default = false)]
+    pub continiue_training: bool,
+    #[config(default = 1)]
+    pub resume_epoch: usize
 }
 
 pub fn train<B: AutodiffBackend>(
@@ -114,8 +114,10 @@ pub fn train<B: AutodiffBackend>(
     device: B::Device,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
-    std::fs::remove_dir_all(artifact_dir).ok();
-    std::fs::create_dir_all(artifact_dir).ok();
+    if !config.continiue_training {
+        std::fs::remove_dir_all(artifact_dir).ok();
+        std::fs::create_dir_all(artifact_dir).ok();
+    }
 
     config
         .save(format!("{artifact_dir}/config.json"))
@@ -142,10 +144,10 @@ pub fn train<B: AutodiffBackend>(
     let random_gray = Box::new(RandomGrayscale::<B>::new(0.5, &device));
 
     let transforms_train: Vec<Box<dyn Augmentation<B>>> = vec![
-        random_flip_hor,
-        color_jitter,
-        random_gray,
-        random_affine,
+        //random_flip_hor,
+        //color_jitter,
+        //random_gray,
+        //random_affine,
         normalize,
     ]; //, color_jitter, random_flip_hor, random_flip_ver];
     let pipeline_train = Pipeline::new(transforms_train);
@@ -164,34 +166,56 @@ pub fn train<B: AutodiffBackend>(
         .with_device(device.clone())
         .build(ds.validation());
 
+    let accuracy_metric = AccuracyMetric::new();
+    let top5accuracy = TopKAccuracyMetric::new(5);
+    let recorder = DefaultRecorder::new();
     let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_val)
         .metrics((
-            AccuracyMetric::new(),
+            accuracy_metric.clone(),
             LossMetric::new(),
-            TopKAccuracyMetric::new(5),
+            top5accuracy,
             CpuTemperature::new(),
             LearningRateMetric::new(),
             CpuMemory::new(),
         ))
-        .with_file_checkpointer(DefaultRecorder::new())
+        .with_file_checkpointer(recorder.clone())
         .num_epochs(config.num_epochs)
+        .early_stopping(MetricEarlyStoppingStrategy::new(
+            &accuracy_metric,
+            burn::train::metric::store::Aggregate::Mean,
+            burn::train::metric::store::Direction::Highest,
+            burn::train::metric::store::Split::Valid,
+            StoppingCondition::NoImprovementSince { n_epochs: (5) },
+        ))
         .summary();
 
-    let model = config.model.init::<B>(&device);
-    let result = learner.launch(Learner::new(
-        model,
-        config.optimizer.init(),
-        LinearLrSchedulerConfig::new(
+    let mut model = config.model.init::<B>(&device);
+    let mut optimizer = config.optimizer.init();
+    let mut scheduler: LinearLrScheduler = LinearLrSchedulerConfig::new(
             config.learning_rate,
             config.learning_rate / 10.0,
             config.num_epochs * config.batch_size,
         )
-        .init()
-        .unwrap(),
+        .init().unwrap();
+
+    if config.continiue_training {
+        let epoch = config.resume_epoch;
+        let model_path = format!("{artifact_dir}/model-{epoch}.mpk");
+        let optimizer_path = format!("{artifact_dir}/optim-{epoch}.mpk");
+        let scheduler_path = format!("{artifact_dir}/scheduler-{epoch}.mpk");
+        model = model.load_file(model_path, &recorder, &device).unwrap();
+        optimizer = optimizer.load_record(recorder.load(optimizer_path.into(), &device).unwrap());
+        scheduler = scheduler.load_record::<B>(<NamedMpkFileRecorder<FullPrecisionSettings> as Recorder<B>>::load::<usize>(&recorder, scheduler_path.into(), &device).unwrap());
+    }
+
+    let result = learner.launch(Learner::new(
+        model,
+        optimizer,
+        scheduler,
     ));
 
     result
         .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .save_file(format!("{artifact_dir}/model"), &recorder)
         .expect("Trained model should be saved successfully");
 }

@@ -1,8 +1,7 @@
 use burn::{
     module::{Module, Param},
     nn::{
-        Dropout, DropoutConfig,
-        conv::{Conv2d, Conv2dConfig},
+        Dropout, DropoutConfig, Linear, LinearConfig, conv::{Conv2d, Conv2dConfig}
     },
     prelude::*,
     tensor::Distribution,
@@ -34,6 +33,7 @@ pub struct SpectrePatchEmbeddingConfig {
     embed_dim: usize,
     patch_size: usize,
     image_size: usize,
+    dropout: f64
 }
 
 impl<B: Backend> SpectrePatcher<B> {
@@ -94,7 +94,7 @@ impl SpectrePatchEmbeddingConfig {
                 device,
             ))
             .set_require_grad(true),
-            dropout: DropoutConfig::new(0.001).init(),
+            dropout: DropoutConfig::new(self.dropout).init(),
         }
     }
 }

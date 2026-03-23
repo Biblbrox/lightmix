@@ -23,6 +23,8 @@ pub struct Config {
     pub num_encoders: i64,
     pub embed_dim: i64,
     pub num_workers: i64,
+    pub continue_training: bool,
+    pub resume_epoch: i64,
 }
 
 impl Config {
@@ -74,6 +76,8 @@ impl Config {
             num_encoders: config[dataset][model]["num_encoders"].as_integer().unwrap(),
             embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
             num_workers: config["num_workers"].as_integer().unwrap(),
+            continue_training: config[dataset][model]["continue_training"].as_bool().unwrap(),
+            resume_epoch: config[dataset][model]["resume_epoch"].as_integer().unwrap()
         }
     }
 

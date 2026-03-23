@@ -64,7 +64,8 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
         let (tx, rx) = sync_channel(self.buffer_size);
         self.recv = Some(Arc::new(Mutex::new(rx)));
 
-        for _ in 0..self.num_workers {
+        let handles: Vec<_> = (0..self.num_workers)
+        .map(|_| {
             let source = Arc::clone(&source);
             let tx = tx.clone();
             let mapper = mapper.clone();
@@ -75,46 +76,34 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                     let maybe_batch = stream.next().transpose().unwrap();
                     drop(stream);
 
-                    if let Some(mut batch) = maybe_batch {
-                        if let Some(ref map) = mapper {
-                            batch = map(batch);
-                        }
+                    match maybe_batch {
+                        Some(mut batch) => {
+                            if let Some(ref map) = mapper {
+                                batch = map(batch);
+                            }
 
-                        if let Some(seed) = shuffle {
-                            batch = batch
-                                .sample_n_literal(batch.height(), false, true, Some(seed))
-                                .unwrap();
-                        }
+                            if let Some(seed) = shuffle {
+                                batch = batch
+                                    .sample_n_literal(batch.height(), false, true, Some(seed))
+                                    .unwrap();
+                            }
 
-                        if tx.send(Some(batch)).is_err() {
-                            break;
+                            if tx.send(Some(batch)).is_err() {
+                                break;
+                            }
                         }
-                    } else {
-                        tx.send(None).unwrap_or(());
-                        break;
+                        None => break,
                     }
                 }
-            });
-        }
+            })
+            }).collect();
 
-        //thread::spawn(move || {
-        //    let mut stream = source.as_ref().unwrap().lock().unwrap();
-        //    while let Some(mut batch) = stream.next().transpose().unwrap() {
-        //        if let Some(ref map) = mapper {
-        //            batch = map(batch);
-        //        }
-
-        //        if let Some(seed) = shuffle {
-        //            batch = batch
-        //                .sample_n_literal(batch.height(), false, true, Some(seed))
-        //                .unwrap();
-        //        }
-
-        //        tx.send(Some(batch)).unwrap();
-        //    }
-
-        //    tx.send(None).unwrap();
-        //});
+        thread::spawn(move || {
+            for handle in handles {
+                handle.join().ok();
+            }
+            tx.send(None).ok();
+        }); 
     }
 
     fn batch(&mut self) -> Option<DataFrame> {

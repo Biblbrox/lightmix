@@ -40,12 +40,15 @@ pub struct SpectreLinearConfig {
 pub struct SpectreEncoderLayer<B: Backend> {
     linear1: SpectreLinear<B>,
     linear2: SpectreLinear<B>,
+    //linear1: Linear<B>,
+    //linear2: Linear<B>,
     mix_layer: MHPermutMixMatrix<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
     dropout1: Dropout,
     dropout2: Dropout,
+    activation: Gelu
 }
 
 #[derive(Config, Debug)]
@@ -57,6 +60,7 @@ pub struct SpectreEncoderLayerConfig {
     dropout: f64,
     activation: String,
     num_encoders: usize,
+    encoder: usize
 }
 
 #[derive(Module, Debug)]
@@ -121,7 +125,8 @@ impl SpectreLinearConfig {
 
 impl<B: Backend> SpectreEncoderLayer<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.norm1.forward(self.mix_layer.forward(x.clone())) + x;
+        let x = self.norm1.forward(self.mix_layer.forward(x.clone()));// + x;
+        //let x = self.mix_layer.forward(x.clone()) + x;
         self.norm2.forward(x.clone() + self._ff_block(x))
     }
 
@@ -142,12 +147,14 @@ impl SpectreEncoderLayerConfig {
                 self.num_heads,
                 self.embed_dim,
                 self.num_encoders,
+                self.encoder,
             )
             .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             dropout1: DropoutConfig::new(self.dropout).init(),
             dropout2: DropoutConfig::new(self.dropout).init(),
+            activation: Gelu
         }
     }
 }
@@ -171,7 +178,7 @@ impl SpectreEncoderConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectreEncoder<B> {
         let mut layers = Vec::new();
 
-        for _ in 0..self.num_layers {
+        for encoder in 0..self.num_layers {
             layers.push(
                 SpectreEncoderLayerConfig::new(
                     self.seq_length,
@@ -181,6 +188,7 @@ impl SpectreEncoderConfig {
                     self.dropout,
                     self.activation.clone(),
                     self.num_layers,
+                    encoder
                 )
                 .init(device),
             );
@@ -210,6 +218,7 @@ impl SpectreViTConfig {
                 self.embed_dim,
                 self.patch_size,
                 self.image_size,
+                self.dropout
             )
             .init(device),
 
@@ -282,7 +291,7 @@ mod tests {
             &device,
         );
 
-        let model = SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE)
+        let model = SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE, DROPOUT)
             .init(&device);
         let vit_input = model.forward(test_image);
         assert_eq!(
