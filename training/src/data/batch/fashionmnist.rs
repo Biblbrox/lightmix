@@ -9,15 +9,15 @@ use crate::{
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "label";
 
-pub struct MnistBatcher;
+pub struct FashionMnistBatcher;
 
-impl MnistBatcher {
+impl FashionMnistBatcher {
     pub fn new() -> Arc<Self> {
         Arc::new(Self)
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for MnistBatcher {
+impl<B: Backend> FrameBatcher<B> for FashionMnistBatcher {
     fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 

@@ -60,10 +60,10 @@ mod tests {
     fn test_pipeline() {
         type B = Cuda;
         let device = CudaDevice::default();
-        let std = [0.5, 0.5, 0.5];
-        let mean = [0.5, 0.5, 0.5];
+        let std = vec![0.5, 0.5, 0.5];
+        let mean = vec![0.5, 0.5, 0.5];
 
-        let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
+        let normalize = Box::new(Normalize::<B>::new(std, mean, &device));
         let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
         let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.4, &device));
 

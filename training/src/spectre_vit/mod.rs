@@ -38,16 +38,15 @@ pub struct SpectreLinearConfig {
 
 #[derive(Module, Debug)]
 pub struct SpectreEncoderLayer<B: Backend> {
-    linear1: SpectreLinear<B>,
-    linear2: SpectreLinear<B>,
+    linear1: Linear<B>,
+    linear2: Linear<B>,
     //linear1: Linear<B>,
     //linear2: Linear<B>,
     mix_layer: MHPermutMixMatrix<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
-    dropout1: Dropout,
-    dropout2: Dropout,
+    dropout: Dropout,
     activation: Gelu
 }
 
@@ -107,8 +106,6 @@ impl<B: Backend> SpectreLinear<B> {
             .activation
             .forward(self.norm.forward(self.linear.forward(x.clone())));
         feat + self.avg_pool.forward(x)
-        //self.activation
-        //    .forward(self.norm.forward(self.linear.forward(x)))
     }
 }
 
@@ -125,22 +122,21 @@ impl SpectreLinearConfig {
 
 impl<B: Backend> SpectreEncoderLayer<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.norm1.forward(self.mix_layer.forward(x.clone()));// + x;
-        //let x = self.mix_layer.forward(x.clone()) + x;
+        let x = self.norm1.forward(x.clone() + self.dropout.forward(self.mix_layer.forward(x.clone())));
         self.norm2.forward(x.clone() + self._ff_block(x))
     }
 
     pub fn _ff_block(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.dropout1.forward(self.linear1.forward(x));
-        self.dropout2.forward(self.linear2.forward(x))
+        let x = self.dropout.forward(self.activation.forward(self.linear1.forward(x)));
+        self.dropout.forward(self.linear2.forward(x))
     }
 }
 
 impl SpectreEncoderLayerConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectreEncoderLayer<B> {
         SpectreEncoderLayer {
-            linear1: SpectreLinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
-            linear2: SpectreLinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
+            linear1: LinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
+            linear2: LinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
             mix_layer: MHPermutMixMatrixConfig::new(
                 self.embed_dim,
                 self.seq_length,
@@ -152,8 +148,7 @@ impl SpectreEncoderLayerConfig {
             .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
-            dropout1: DropoutConfig::new(self.dropout).init(),
-            dropout2: DropoutConfig::new(self.dropout).init(),
+            dropout: DropoutConfig::new(self.dropout).init(),
             activation: Gelu
         }
     }

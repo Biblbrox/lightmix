@@ -1,6 +1,8 @@
 pub mod cifar100;
 pub mod imagenet1k;
 pub mod mnist;
+pub mod fashionmnist;
+pub mod tinyimagenet;
 
 use polars::prelude::*;
 
@@ -65,10 +67,10 @@ mod tests {
 
         let ds = ImageNet1kDataset::new(imagenet1k_path, crate::data::dataset::LazyFiletype::Arrow);
 
-        let std = [0.229, 0.224, 0.225];
-        let mean = [0.485, 0.456, 0.406];
+        let std =vec![0.229, 0.224, 0.225];
+        let mean = vec![0.485, 0.456, 0.406];
 
-        let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
+        let normalize = Box::new(Normalize::<B>::new(std, mean, &device));
         let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
         let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.1, &device));
 

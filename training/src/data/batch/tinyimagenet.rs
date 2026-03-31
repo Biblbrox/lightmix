@@ -9,38 +9,34 @@ use crate::{
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "label";
 
-pub struct MnistBatcher;
+pub struct TinyImageNetBatch<B: Backend> {
+    pub images: Tensor<B, 4>,
+    pub targets: Tensor<B, 1, Int>,
+}
 
-impl MnistBatcher {
+pub struct TinyImageNetBatcher;
+
+impl TinyImageNetBatcher {
     pub fn new() -> Arc<Self> {
         Arc::new(Self)
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for MnistBatcher {
+impl<B: Backend> FrameBatcher<B> for TinyImageNetBatcher {
     fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
         // Image handling
-        let imagebuf = df
-            .column(IMAGECOL)
+        let total_images = batch_size * 64 * 64 * 3;
+
+        let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
+        df.column(IMAGECOL)
             .unwrap()
             .binary()
             .unwrap()
             .into_no_null_iter()
-            .flatten()
-            .copied()
-            .collect();
-        let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 28, 28, 1], DType::U8)
-            .convert_dtype(DType::F32);
+            .for_each(|chunk| imagebuf.extend_from_slice(chunk));
 
-        let images = transforms.execute(
-            Tensor::<B, 4>::from_data(imagedata, device)
-                .swap_dims(1, -1)
-                .div_scalar(255),
-        );
-
-        // Label handling
         let labelbuf: Vec<i64> = df
             .column(LABELCOL)
             .unwrap()
@@ -48,6 +44,13 @@ impl<B: Backend> FrameBatcher<B> for MnistBatcher {
             .unwrap()
             .into_no_null_iter()
             .collect();
+
+        let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 64, 64, 3], DType::U8)
+            .convert_dtype(DType::F32);
+
+        let images =
+            transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1).div_scalar(255));
+
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
         Batch {

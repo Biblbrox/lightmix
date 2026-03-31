@@ -13,7 +13,7 @@ mod vit;
 use std::{env::current_dir, path::PathBuf};
 
 use crate::{
-    config::Config, spectre_vit::SpectreViTConfig as ModelConfig, training::TrainingConfig,
+    config::Config, spectre_vit::SpectreViTConfig as ModelConfig,
 };
 use burn::{
     backend::{Autodiff, Cuda, NdArray},
@@ -44,7 +44,7 @@ fn main() {
             localpath.to_str().unwrap()
         );
     }
-    let dataset = "cifar100";
+    let dataset = "fashionmnist";
     let model_name = "spectre_vit";
     let config = Config::parse(&path, dataset, model_name, Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());
@@ -71,8 +71,9 @@ fn main() {
     crate::training::train::<MyAutodiffBackend>(
         &artifact_dir,
         dataset_path,
-        TrainingConfig::new(
-            ModelConfig::new(
+        config.clone(),
+        device.clone(),
+ModelConfig::new(
                 config.in_channels as usize,
                 config.embed_dim as usize,
                 config.num_heads as usize,
@@ -87,15 +88,6 @@ fn main() {
                 .with_weight_decay(config.adam_weight_decay as f32)
                 .with_beta_1(config.adam_betas[0] as f32)
                 .with_beta_2(config.adam_betas[1] as f32),
-        )
-        .with_batch_size(config.batch_size as usize)
-        .with_val_batch_size(config.val_batch_size as usize)
-        .with_num_epochs(config.epochs as usize)
-        .with_num_workers(config.num_workers as usize)
-        .with_learning_rate(config.learning_rate)
-        .with_continiue_training(config.continue_training)
-        .with_resume_epoch(config.resume_epoch as usize),
-        device.clone(),
     );
 
     //crate::inference::infer::<MyBackend>(

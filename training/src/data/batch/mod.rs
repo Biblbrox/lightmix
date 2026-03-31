@@ -1,6 +1,8 @@
 pub mod cifar100;
 pub mod imagenet1k;
 pub mod mnist;
+pub mod fashionmnist;
+pub mod tinyimagenet;
 
 use burn::prelude::*;
 use polars::prelude::*;

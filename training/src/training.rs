@@ -1,14 +1,13 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use burn::{
     backend::autodiff::checkpoint::strategy::CheckpointStrategy,
-    config::Config,
     lr_scheduler::{
         LrScheduler, cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig}, linear::{LinearLrScheduler, LinearLrSchedulerConfig}
     },
     module::Module,
     nn::{LinearRecord, loss::CrossEntropyLossConfig},
-    optim::{AdamWConfig, Optimizer, adaptor::OptimizerAdaptor},
+    optim::{AdamW, AdamWConfig, Optimizer, adaptor::OptimizerAdaptor},
     prelude::Backend,
     record::{CompactRecorder, DefaultRecorder, FullPrecisionSettings, NamedMpkFileRecorder, Record, Recorder},
     tensor::{Int, Tensor, backend::AutodiffBackend},
@@ -18,7 +17,6 @@ use burn::{
         }
     },
 };
-use cubecl::num_traits::Pow;
 
 use crate::{
     augmentations::{
@@ -26,25 +24,30 @@ use crate::{
         colors::{ColorJitter, RandomGrayscale},
         normalize::Normalize,
         rotation::{Orientation, RandomAffine, RandomFlip},
-    },
-    data::{
+    }, config::Config, data::{
         batch::{
-            Batch, cifar100::Cifar100Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
+            Batch, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher, tinyimagenet::TinyImageNetBatcher
         },
         builder::StreamingDataLoaderBuilder,
         dataset::{
-            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset, imagenet1k::ImageNet1kDataset,
-            mnist::MnistDataset,
+            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset, fashionmnist::FashionMnistDataset, imagenet1k::ImageNet1kDataset, mnist::MnistDataset, tinyimagenet::TinyImageNetDataset
         },
-        mapper::{cifar100::Cifar100Mapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper},
+        mapper::{cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper, tinyimagenet::TinyImageNetMapper},
         strategy::buffered::BufferedBatchStrategy,
-    },
-    spectre_vit::{SpectreViT as Model, SpectreViTConfig as ModelConfig},
+    }, spectre_vit::{SpectreViT as Model, SpectreViTConfig}
 };
 
-type Dataset = Cifar100Dataset;
-type Batcher = Cifar100Batcher;
-type Mapper = Cifar100Mapper;
+type Dataset = FashionMnistDataset;
+type Batcher = FashionMnistBatcher;
+type Mapper = FashionMnistMapper;
+
+//type Dataset = TinyImageNetDataset;
+//type Batcher = TinyImageNetBatcher;
+//type Mapper = TinyImageNetMapper;
+
+//type Dataset = Cifar100Dataset;
+//type Batcher = Cifar100Batcher;
+//type Mapper = Cifar100Mapper;
 
 //type Dataset = ImageNet1kDataset;
 //type Batcher = ImageNet1kBatcher;
@@ -85,58 +88,31 @@ impl<B: Backend> InferenceStep for Model<B> {
     }
 }
 
-#[derive(Config, Debug)]
-pub struct TrainingConfig {
-    pub model: ModelConfig,
-    pub optimizer: AdamWConfig,
-    #[config(default = 10)]
-    pub num_epochs: usize,
-    #[config(default = 64)]
-    pub batch_size: usize,
-    #[config(default = 128)]
-    pub val_batch_size: usize,
-    #[config(default = 16)]
-    pub num_workers: usize,
-    #[config(default = 42)]
-    pub seed: u64,
-    #[config(default = 1.0e-4)]
-    pub learning_rate: f64,
-    #[config(default = false)]
-    pub continiue_training: bool,
-    #[config(default = 1)]
-    pub resume_epoch: usize
-}
-
 pub fn train<B: AutodiffBackend>(
     artifact_dir: &String,
     data_dir: &str,
-    config: TrainingConfig,
+    config: Config,
     device: B::Device,
+    model: SpectreViTConfig,
+    optimizer: AdamWConfig,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
-    if !config.continiue_training {
+    if !config.continue_training {
         std::fs::remove_dir_all(artifact_dir).ok();
         std::fs::create_dir_all(artifact_dir).ok();
     }
-
+    
     config
-        .save(format!("{artifact_dir}/config.json"))
-        .expect("Config should be saved successfully");
+        .save(PathBuf::from(format!("{artifact_dir}/config.json")).as_path());
 
-    B::seed(&device, config.seed);
+    B::seed(&device, config.random_seed as u64);
 
     let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
-    let strategy = BufferedBatchStrategy::new(config.batch_size, 100, config.num_workers); //.with_mapper(Mapper::decoder());
-    // Imagenet1k normalize
-    //let std = [0.229, 0.224, 0.225];
-    //let mean = [0.485, 0.456, 0.406];
+    let strategy = BufferedBatchStrategy::new(config.batch_size as usize, 100, config.num_workers as usize); //.with_mapper(Mapper::decoder());
 
-    let std = [0.2675, 0.2565, 0.2761];
-    let mean = [0.5071, 0.4867, 0.4408];
-
-    let normalize = Box::new(Normalize::<B, 3>::new(std, mean, &device));
-    let normalize_val = Box::new(Normalize::<B::InnerBackend, 3>::new(std, mean, &device));
+    let normalize = Box::new(Normalize::<B>::new(config.std.clone(), config.mean.clone(), &device));
+    let normalize_val = Box::new(Normalize::<B::InnerBackend>::new(config.std, config.mean, &device));
     let random_flip_hor = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
     let random_flip_ver = Box::new(RandomFlip::<B>::new(0.5, Orientation::Vertical));
     let random_affine = Box::new(RandomAffine::<B>::new(0.5, 30.0));
@@ -156,7 +132,7 @@ pub fn train<B: AutodiffBackend>(
     let pipeline_val = Pipeline::<B::InnerBackend>::new(transforms_val);
 
     let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
-        .with_strategy(strategy.clone().with_shuffle(config.seed))
+        .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
         .build(ds.train());
@@ -169,7 +145,7 @@ pub fn train<B: AutodiffBackend>(
     let accuracy_metric = AccuracyMetric::new();
     let top5accuracy = TopKAccuracyMetric::new(5);
     let recorder = DefaultRecorder::new();
-    let learner = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_val)
+    let learner = SupervisedTraining::new(artifact_dir, dataloader_train.clone(), dataloader_val)
         .metrics((
             accuracy_metric.clone(),
             LossMetric::new(),
@@ -179,26 +155,25 @@ pub fn train<B: AutodiffBackend>(
             CpuMemory::new(),
         ))
         .with_file_checkpointer(recorder.clone())
-        .num_epochs(config.num_epochs)
+        .num_epochs(config.epochs as usize)
         .early_stopping(MetricEarlyStoppingStrategy::new(
             &accuracy_metric,
             burn::train::metric::store::Aggregate::Mean,
             burn::train::metric::store::Direction::Highest,
             burn::train::metric::store::Split::Valid,
-            StoppingCondition::NoImprovementSince { n_epochs: (5) },
+            StoppingCondition::NoImprovementSince { n_epochs: 10 },
         ))
         .summary();
 
-    let mut model = config.model.init::<B>(&device);
-    let mut optimizer = config.optimizer.init();
-    let mut scheduler: LinearLrScheduler = LinearLrSchedulerConfig::new(
+    let mut model = model.init::<B>(&device);
+    let mut optimizer = optimizer.init();
+    let mut scheduler= CosineAnnealingLrSchedulerConfig::new(
             config.learning_rate,
-            config.learning_rate / 10.0,
-            config.num_epochs * config.batch_size,
+            config.epochs as usize * (dataloader_train.num_items() / config.batch_size as usize),
         )
         .init().unwrap();
 
-    if config.continiue_training {
+    if config.continue_training {
         let epoch = config.resume_epoch;
         let model_path = format!("{artifact_dir}/model-{epoch}.mpk");
         let optimizer_path = format!("{artifact_dir}/optim-{epoch}.mpk");

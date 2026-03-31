@@ -8,6 +8,8 @@ cache_dir = "hf://datasets"
 num_classes = 1000
 img_size = 224
 in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
 
 [imagenet1k.spectre_vit]
 batch_size = 32
@@ -25,10 +27,36 @@ embed_dim = 512
 continue_training = false
 resume_epoch = 1
 
+[tinyimagenet]
+num_classes = 200
+img_size = 64
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[tinyimagenet.spectre_vit]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+patch_size = 8
+num_heads = 8
+dropout = 0.001
+hidden_dim = 768
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 4
+embed_dim = 512
+continue_training = false
+resume_epoch = 1
+
+
 [cifar100]
 num_classes = 100
 img_size = 32
 in_channels = 3
+std = [0.2675, 0.2565, 0.2761]
+mean = [0.5071, 0.4867, 0.4408]
 
 [cifar100.spectre_vit]
 batch_size = 8
@@ -50,6 +78,8 @@ resume_epoch = 1
 img_size = 28
 num_classes = 10
 in_channels = 1
+mean = [0.1307]
+std = [0.3081]
 
 [mnist.spectre_vit]
 batch_size = 8
@@ -57,6 +87,30 @@ val_batch_size = 512
 epochs = 10
 patch_size = 4
 num_heads = 8
+dropout = 0.001
+hidden_dim = 256
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 4
+embed_dim = 16
+continue_training = false
+resume_epoch = 1
+
+
+[fashionmnist]
+img_size = 28
+num_classes = 10
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+
+[fashionmnist.spectre_vit]
+batch_size = 8
+val_batch_size = 512
+epochs = 10
+patch_size = 4
+num_heads = 1
 dropout = 0.001
 hidden_dim = 256
 adam_weight_decay = 0.01

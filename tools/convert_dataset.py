@@ -11,8 +11,10 @@ from PIL import Image
 
 DATASET_SPECS = {
     "imagenet1k": {"size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
+    "tinyimagenet": {"size": None, "crop": None, "channels": 3},
     "cifar100": {"size": None, "crop": None, "channels": 3},
     "mnist": {"size": None, "crop": None, "channels": 1},
+    "fashionmnist": {"size": None, "crop": None, "channels": 1},
 }
 
 
@@ -88,7 +90,7 @@ if __name__ == "__main__":
         help="Dataset type",
         type=str,
         required=True,
-        choices=["imagenet1k", "cifar100", "mnist"],
+        choices=["imagenet1k", "cifar100", "mnist", "fashionmnist", "tinyimagenet"],
     )
     args = parser.parse_args()
 

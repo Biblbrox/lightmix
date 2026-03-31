@@ -18,6 +18,7 @@ pub struct BufferedBatchStrategy {
     batch_size: usize,
     buffer_size: usize,
 }
+
 impl BufferedBatchStrategy {
     pub fn new(batch_size: usize, buffer_size: usize, num_workers: usize) -> Self {
         Self {
@@ -44,7 +45,8 @@ impl BufferedBatchStrategy {
 impl Clone for BufferedBatchStrategy {
     fn clone(&self) -> Self {
         Self {
-            recv: None,
+            //recv: None,
+            recv: self.recv.clone(),
             mapper: self.mapper.clone(),
             shuffle: self.shuffle,
             batch_size: self.batch_size,

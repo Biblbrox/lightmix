@@ -1,8 +1,9 @@
-use std::path::Path;
+use std::{fs::File, io::{Write}, path::Path};
 
+use serde::Serialize;
 use toml::{Table, Value};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Config {
     pub random_seed: i64,
     pub learning_rate: f64,
@@ -19,6 +20,8 @@ pub struct Config {
     pub hidden_dim: i64,
     pub adam_weight_decay: f64,
     pub adam_betas: [f64; 2],
+    pub mean: Vec<f32>,
+    pub std: Vec<f32>,
     pub activation: String,
     pub num_encoders: i64,
     pub embed_dim: i64,
@@ -77,8 +80,23 @@ impl Config {
             embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
             num_workers: config["num_workers"].as_integer().unwrap(),
             continue_training: config[dataset][model]["continue_training"].as_bool().unwrap(),
-            resume_epoch: config[dataset][model]["resume_epoch"].as_integer().unwrap()
+            resume_epoch: config[dataset][model]["resume_epoch"].as_integer().unwrap(),
+            mean: config[dataset]["mean"].as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_float().unwrap() as f32).collect(),
+            std: config[dataset]["std"].as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_float().unwrap() as f32).collect(),
         }
+    }
+
+    pub fn save(&self, path: &Path) {
+        let mut file = File::create(path).unwrap();
+    
+        let config = toml::to_string_pretty(self);
+        file.write_all(config.unwrap().as_bytes());
     }
 
     fn override_conf(mainconf: &mut Table, localconf: &Table) {
@@ -99,6 +117,7 @@ impl Config {
             }
         }
     }
+
 }
 
 #[cfg(test)]
