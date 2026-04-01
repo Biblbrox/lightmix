@@ -12,6 +12,7 @@ burn = { version = "0.20.1", features = [
   "tui",
   "ndarray",
 ] }
+simplelog = "0.12.2"
 burn-cuda = "0.20.1"
 polars = { version = "0.53.0", features = [
   "async",
@@ -33,3 +34,4 @@ tikv-jemallocator = "0.6.1"
 burn-vision = "0.20.1"
 rand = "0.10.0"
 serde = "1.0.228"
+log = "0.4.29"

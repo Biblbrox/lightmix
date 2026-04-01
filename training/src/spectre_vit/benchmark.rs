@@ -1,8 +1,8 @@
 use burn::{Tensor, nn::{Linear, LinearConfig}, prelude::Backend, tensor::Distribution};
-use cubecl::{benchmark::Benchmark, future};
+use cubecl::{benchmark::Benchmark};
 
 use crate::spectre_vit::{
-    MHPermutMix, MHPermutMixConfig, SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig, embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig}, permute::{MHPermutMixMatrix, MHPermutMixMatrixConfig}
+    SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig, embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig}, permute::{LearnedPermuter, LearnedPermuterConfig, StaticPermuter, StaticPermuterConfig}
 };
 
 
@@ -150,6 +150,7 @@ impl<B: Backend> Benchmark for SpectreViTBenchmark<B> {
                 self.image_size,
                 self.hid_dim,
                 self.dropout,
+                0.05
             )
             .init(&self.device),
         )
@@ -229,7 +230,7 @@ impl<B: Backend> Benchmark for SpectrePatchEmbeddingBenchmark<B> {
     }
 }
 
-pub struct MHPermutMixBenchmark<B: Backend> {
+pub struct LearnedPermutBenchmark<B: Backend> {
     pub embed_dim: usize,
     pub num_tokens: usize,
     pub batch_size: usize,
@@ -238,8 +239,8 @@ pub struct MHPermutMixBenchmark<B: Backend> {
     pub device: B::Device,
 }
 
-impl<B: Backend> Benchmark for MHPermutMixBenchmark<B> {
-    type Input = (Tensor<B, 3>, MHPermutMix<B>);
+impl<B: Backend> Benchmark for LearnedPermutBenchmark<B> {
+    type Input = (Tensor<B, 3>, LearnedPermuter<B>);
     type Output = Tensor<B, 3>;
 
     fn prepare(&self) -> Self::Input {
@@ -249,12 +250,14 @@ impl<B: Backend> Benchmark for MHPermutMixBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            MHPermutMixConfig::new(
+            LearnedPermuterConfig::new(
                 self.embed_dim,
                 self.num_tokens,
                 self.num_heads,
                 self.out_channels,
                 1,
+                1,
+                0.05
             )
             .init(&self.device),
         )
@@ -279,7 +282,7 @@ impl<B: Backend> Benchmark for MHPermutMixBenchmark<B> {
     }
 }
 
-pub struct MHPermutMixMatrixBenchmark<B: Backend> {
+pub struct StaticPermuterBenchmark<B: Backend> {
     pub embed_dim: usize,
     pub num_tokens: usize,
     pub batch_size: usize,
@@ -288,8 +291,8 @@ pub struct MHPermutMixMatrixBenchmark<B: Backend> {
     pub device: B::Device,
 }
 
-impl<B: Backend> Benchmark for MHPermutMixMatrixBenchmark<B> {
-    type Input = (Tensor<B, 3>, MHPermutMixMatrix<B>);
+impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
+    type Input = (Tensor<B, 3>, StaticPermuter<B>);
     type Output = Tensor<B, 3>;
 
     fn prepare(&self) -> Self::Input {
@@ -299,13 +302,12 @@ impl<B: Backend> Benchmark for MHPermutMixMatrixBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            MHPermutMixMatrixConfig::new(
+            StaticPermuterConfig::new(
                 self.embed_dim,
                 self.num_tokens,
                 self.num_heads,
                 self.out_channels,
                 1,
-                1
             )
             .init(&self.device),
         )
@@ -340,7 +342,7 @@ mod tests {
 
     use crate::{
         spectre_vit::benchmark::{
-            LinearBenchmark, MHPermutMixBenchmark, MHPermutMixMatrixBenchmark, SpectreLinearBenchmark, SpectrePatchEmbeddingBenchmark, SpectreViTBenchmark
+            LearnedPermutBenchmark, LinearBenchmark, SpectreLinearBenchmark, SpectrePatchEmbeddingBenchmark, SpectreViTBenchmark, StaticPermuterBenchmark
         },
         utils::print_bench_results,
     };
@@ -376,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn mh_permute_mix_bench() {
+    fn learned_permut_bench() {
         type B = burn::backend::cuda::Cuda;
         type MyAutodiffBackend = Autodiff<B>;
 
@@ -393,10 +395,10 @@ mod tests {
         let out_channels = [192, 128, 256, 512, 1024];
 
         // GPU tests
-        let mut results_gpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_matrix_gpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_gpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_gpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for head in num_heads.into_iter() {
-            let bench = MHPermutMixBenchmark::<MyAutodiffBackend> {
+            let bench_static = StaticPermuterBenchmark::<MyAutodiffBackend> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
@@ -404,7 +406,7 @@ mod tests {
                 out_channels: out_channels[0],
                 device: device.clone(),
             };
-            let bench_matrix = MHPermutMixMatrixBenchmark::<MyAutodiffBackend> {
+            let bench_learned = LearnedPermutBenchmark::<MyAutodiffBackend> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
@@ -413,20 +415,20 @@ mod tests {
                 device: device.clone(),
             };
 
-            let bench_res = bench.run(TimingMethod::Device).unwrap();
-            let computed = BenchmarkComputations::new(&bench_res);
+            let bench_res_static = bench_static.run(TimingMethod::Device).unwrap();
+            let computed_static = BenchmarkComputations::new(&bench_res_static);
 
-            let bench_res_matrix = bench_matrix.run(TimingMethod::Device).unwrap();
-            let computed_matrix = BenchmarkComputations::new(&bench_res_matrix);
-            results_gpu.push((head as u32, computed));
-            results_matrix_gpu.push((head as u32, computed_matrix));
+            let bench_res_learned = bench_learned.run(TimingMethod::Device).unwrap();
+            let computed_learned= BenchmarkComputations::new(&bench_res_learned);
+            results_gpu_static.push((head as u32, computed_static));
+            results_gpu_learned.push((head as u32, computed_learned));
         }
 
         // CPU tests
-        let mut results_cpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_matrix_cpu: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_cpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_cpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for head in num_heads.into_iter() {
-            let bench = MHPermutMixBenchmark::<CpuAutodiffBackend> {
+            let bench_learned = LearnedPermutBenchmark::<CpuAutodiffBackend> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
@@ -434,7 +436,7 @@ mod tests {
                 out_channels: out_channels[0],
                 device: cpu_device,
             };
-            let bench_matrix = MHPermutMixMatrixBenchmark::<CpuAutodiffBackend> {
+            let bench_static = StaticPermuterBenchmark::<CpuAutodiffBackend> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
@@ -443,21 +445,21 @@ mod tests {
                 device: cpu_device,
             };
 
-            let bench_res = bench.run(TimingMethod::Device).unwrap();
-            let computed = BenchmarkComputations::new(&bench_res);
+            let bench_res_static = bench_static.run(TimingMethod::Device).unwrap();
+            let computed_static = BenchmarkComputations::new(&bench_res_static);
 
-            let bench_res_matrix = bench_matrix.run(TimingMethod::Device).unwrap();
-            let computed_matrix = BenchmarkComputations::new(&bench_res_matrix);
-            results_cpu.push((head as u32, computed));
-            results_matrix_cpu.push((head as u32, computed_matrix));
+            let bench_res_learned = bench_learned.run(TimingMethod::Device).unwrap();
+            let computed_learned = BenchmarkComputations::new(&bench_res_learned);
+            results_cpu_static.push((head as u32, computed_static));
+            results_cpu_learned.push((head as u32, computed_learned));
         }
 
-        print_bench_results("MHPermutMix (GPU)", &results_gpu, "num_heads");
-        print_bench_results("MHPermutMixMatrix (GPU)", &results_matrix_gpu, "num_heads");
-        print_bench_results("MHPermutMix (NdArray)", &results_cpu, "num_heads");
+        print_bench_results("StaticPermut (GPU)", &results_gpu_static, "num_heads");
+        print_bench_results("LearnedPermut (GPU)", &results_gpu_learned, "num_heads");
+        print_bench_results("StaticPermut (NdArray)", &results_cpu_static, "num_heads");
         print_bench_results(
-            "MHPermutMixMatrix (NdArray)",
-            &results_matrix_cpu,
+            "LearnedPermut (NdArray)",
+            &results_cpu_learned,
             "num_heads",
         );
     }
@@ -592,6 +594,4 @@ mod tests {
             "out_channels",
         );
     }
-
-
 }

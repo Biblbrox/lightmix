@@ -1,4 +1,4 @@
-use std::{fs::File, io::{Write}, path::Path};
+use std::{default, fs::File, io::Write, path::Path};
 
 use serde::Serialize;
 use toml::{Table, Value};
@@ -28,6 +28,7 @@ pub struct Config {
     pub num_workers: i64,
     pub continue_training: bool,
     pub resume_epoch: i64,
+    pub sinkhorn_temp: f64
 }
 
 impl Config {
@@ -89,6 +90,7 @@ impl Config {
                 .unwrap()
                 .iter()
                 .map(|v| v.as_float().unwrap() as f32).collect(),
+            sinkhorn_temp: config["sinkhorn_temp"].as_float().unwrap()
         }
     }
 
@@ -96,7 +98,7 @@ impl Config {
         let mut file = File::create(path).unwrap();
     
         let config = toml::to_string_pretty(self);
-        file.write_all(config.unwrap().as_bytes());
+        file.write_all(config.unwrap().as_bytes()).unwrap();
     }
 
     fn override_conf(mainconf: &mut Table, localconf: &Table) {

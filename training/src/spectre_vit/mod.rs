@@ -18,7 +18,7 @@ use crate::{
     norm::{DynamicERF, DynamicERFConfig},
     spectre_vit::{
         embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
-        permute::{MHPermutMix, MHPermutMixConfig, MHPermutMixMatrix, MHPermutMixMatrixConfig},
+        permute::{LearnedPermuter, LearnedPermuterConfig},
     },
 };
 
@@ -40,9 +40,7 @@ pub struct SpectreLinearConfig {
 pub struct SpectreEncoderLayer<B: Backend> {
     linear1: Linear<B>,
     linear2: Linear<B>,
-    //linear1: Linear<B>,
-    //linear2: Linear<B>,
-    mix_layer: MHPermutMixMatrix<B>,
+    mix_layer: LearnedPermuter<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
@@ -59,7 +57,8 @@ pub struct SpectreEncoderLayerConfig {
     dropout: f64,
     activation: String,
     num_encoders: usize,
-    encoder: usize
+    encoder: usize,
+    sinkhorn_temp: f32
 }
 
 #[derive(Module, Debug)]
@@ -77,6 +76,7 @@ pub struct SpectreEncoderConfig {
     hid_dim: usize,
     dropout: f64,
     activation: String,
+    sinkhorn_temp: f32
 }
 
 #[derive(Module, Debug)]
@@ -98,6 +98,7 @@ pub struct SpectreViTConfig {
     image_size: usize,
     hid_dim: usize,
     dropout: f64,
+    sinkhorn_temp: f32
 }
 
 impl<B: Backend> SpectreLinear<B> {
@@ -137,13 +138,14 @@ impl SpectreEncoderLayerConfig {
         SpectreEncoderLayer {
             linear1: LinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
             linear2: LinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
-            mix_layer: MHPermutMixMatrixConfig::new(
+            mix_layer: LearnedPermuterConfig::new(
                 self.embed_dim,
                 self.seq_length,
                 self.num_heads,
                 self.embed_dim,
                 self.num_encoders,
                 self.encoder,
+    self.sinkhorn_temp
             )
             .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
@@ -183,7 +185,9 @@ impl SpectreEncoderConfig {
                     self.dropout,
                     self.activation.clone(),
                     self.num_layers,
-                    encoder
+                    encoder,
+                    self.sinkhorn_temp
+
                 )
                 .init(device),
             );
@@ -225,6 +229,7 @@ impl SpectreViTConfig {
                 self.hid_dim,
                 self.dropout,
                 "relu".to_string(),
+                self.sinkhorn_temp
             )
             .init(device),
             layer_norm: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
@@ -253,6 +258,7 @@ mod tests {
     const NUM_CHANNELS: usize = 1;
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
+    const SINKHORNE_TEMPERATURE: f32 = 0.05;
 
     #[test]
     fn test_patcher() {
@@ -316,6 +322,7 @@ mod tests {
             IMG_SIZE,
             HIDDEN_DIM,
             DROPOUT,
+            SINKHORNE_TEMPERATURE
         )
         .init(&device);
         let vit_output = model.forward(test_image);

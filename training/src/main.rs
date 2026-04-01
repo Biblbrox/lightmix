@@ -10,7 +10,7 @@ mod config;
 mod data;
 mod spectre_vit;
 mod vit;
-use std::{env::current_dir, path::PathBuf};
+use std::{env::current_dir, fs::File, path::PathBuf};
 
 use crate::{
     config::Config, spectre_vit::SpectreViTConfig as ModelConfig,
@@ -19,13 +19,24 @@ use burn::{
     backend::{Autodiff, Cuda, NdArray},
     optim::AdamWConfig,
 };
+use simplelog::{LevelFilter, SharedLogger, WriteLogger};
 use tikv_jemallocator::Jemalloc;
+
+fn init_logger() {
+    WriteLogger::init(
+        LevelFilter::Info,
+        simplelog::Config::default(),
+        File::create("training.log").unwrap(),
+    )
+    .unwrap();
+}
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
+    init_logger();
 
     //type MyBackend = Vulkan<f32, i32>;
     //let device = burn::backend::wgpu::WgpuDevice::default();
@@ -83,6 +94,7 @@ ModelConfig::new(
                 config.img_size as usize,
                 config.hidden_dim as usize,
                 config.dropout,
+                config.sinkhorn_temp as f32
             ),
             AdamWConfig::new()
                 .with_weight_decay(config.adam_weight_decay as f32)

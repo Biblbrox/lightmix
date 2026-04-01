@@ -1,17 +1,10 @@
-use std::f64::consts;
+use std::sync::Arc;
 
 use burn::{
-    module::{Module, Param, Parameter},
-    nn::{
+    module::{Module, Param}, nn::{
         Linear, LinearConfig,
-        conv::{Conv1d, Conv1dConfig, Conv2d, Conv2dConfig},
-    },
-    prelude::*,
-    tensor::Distribution, train::logger,
+    }, prelude::*, tensor::Distribution
 };
-use burn_cubecl::kernel::matmul::matmul;
-use cubecl::num_traits::Pow;
-use rand::{Rng, RngExt, SeedableRng, rng, rngs::{self, SmallRng}, seq::SliceRandom};
 
 /// Permuter implementation with indicies
 ///
@@ -19,10 +12,11 @@ use rand::{Rng, RngExt, SeedableRng, rng, rngs::{self, SmallRng}, seq::SliceRand
 /// * `perms`: [TODO:parameter]
 /// * `num_heads`: [TODO:parameter]
 #[derive(Module, Debug)]
-pub struct Permuter<B: Backend> {
+pub struct StaticPermuter<B: Backend> {
     signs: Tensor<B, 2>,
     perms: Tensor<B, 1, Int>,
     num_heads: usize,
+    linear: Linear<B>
 }
 
 /// Permuter implementation with permutation matrix
@@ -43,10 +37,12 @@ pub struct LearnedPermuter<B: Backend> {
     pad_length: usize,  // Nd = next_power_of_two(seq_length)
     stage:      usize,
     sinkhorn_iters:   usize,
+    temperature: f32,
+    linear: Linear<B>
 }
 
 #[derive(Config, Debug)]
-pub struct PermuterConfig {
+pub struct StaticPermuterConfig {
     embed_dim: usize,
     seq_length: usize,
     num_heads: usize,
@@ -64,9 +60,10 @@ pub struct LearnedPermuterConfig {
     stage: usize,
     #[config(default = 20)]
     sinkhorn_iters: usize,
+    temperature: f32,
 }
 
-impl<B: Backend> Permuter<B> {
+impl<B: Backend> StaticPermuter<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let shape = x.shape();
 
@@ -83,7 +80,9 @@ impl<B: Backend> Permuter<B> {
 
         // [B, N * H * E]
         let x = x * signs;
-        x.reshape([shape[0], shape[1], shape[2] * self.num_heads])
+        let x = x.reshape([shape[0], shape[1], shape[2] * self.num_heads]);
+
+        self.linear.forward(x)
     }
 }
 
@@ -96,13 +95,15 @@ impl<B: Backend> LearnedPermuter<B> {
     /// s: [H, Nd, Nd]  ->  P: [H, Nd, Nd]  (rows and cols sum to 1)
     fn sinkhorn(&self, s: Tensor<B, 3>) -> Tensor<B, 3> {
         // Subtract row-max before exp for numerical stability
-        let s = s.clone() - s.max_dim(2);   // [H, Nd, 1] broadcast
+        let s = (s.clone() - s.max_dim(2)) / self.temperature;
         let mut p = s.exp();
 
         for _ in 0..self.sinkhorn_iters {
             p = p.clone() / p.clone().sum_dim(2);  // row-normalise -> rows sum to 1
             p = p.clone() / p.clone().sum_dim(1);  // col-normalise -> cols sum to 1
         }
+
+        //info!("{p}");
         p  // [H, Nd, Nd]
     }
 
@@ -154,7 +155,7 @@ impl<B: Backend> LearnedPermuter<B> {
         // Repeat x for each head then select
         x.repeat(&[1, h, 1])                               // [B, H*Nd, E]
          .select(1, perm)                                  // [B, H*Nd, E]
-    }
+    } 
 
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         // x: [B, N, E]
@@ -180,8 +181,8 @@ impl<B: Backend> LearnedPermuter<B> {
         let x = x.repeat_dim(1, self.num_heads);             // [B, H*Nd, E]
 
         // Butterfly mix (learnable twiddle)
-        //let spectral = self.butterfly_mix(x.clone());   // [B, H*Nd, E]
-        let spectral = x.clone();   // [B, H*Nd, E]
+        let spectral = self.butterfly_mix(x.clone()) + x;   // [B, H*Nd, E]
+        //let spectral = x.clone();   // [B, H*Nd, E]
 
         //let permuted = if self.sinkhorn_scores.is_require_grad() {
         let p    = self.sinkhorn(self.sinkhorn_scores.val());        // [H, Nd, Nd]
@@ -194,9 +195,13 @@ impl<B: Backend> LearnedPermuter<B> {
 
         let permuted = permuted * self.signs.clone();
 
-        permuted.swap_dims(1, 2)   // [B, E, H*Nd]
+        // [B, E, H*Nd]
+        let permuted = permuted.swap_dims(1, 2); 
+        self.linear.forward(permuted).swap_dims(1, 2)
     }
+
 }
+
 
 impl LearnedPermuterConfig {
      pub fn init<B: Backend>(&self, device: &B::Device) -> LearnedPermuter<B> {
@@ -245,6 +250,11 @@ impl LearnedPermuterConfig {
             let cols  = idx.reshape([1, nd]).float();
             let diag_mask = rows.equal(cols).float() * 3.0;   // +3 on diagonal
             let scores = diag_mask + noise;
+            //let scores = Tensor::<B, 2>::random(
+        //[nd,// nd],
+            //    Distribution::Normal(0.0, 1.0),  // larger noise, no bias
+            //device,
+            //);
 
             //perms_list.push(rand_idx);
             signs_list.push(signs.unsqueeze_dim::<3>(0)); // [1, Nd, E]
@@ -256,7 +266,7 @@ impl LearnedPermuterConfig {
         let scores  = Tensor::cat(scores_list, 0);          // [H, Nd, Nd]
         let signs   = Tensor::cat(signs_list, 1);          // [1, H*Nd, E]
         let twiddle = Tensor::stack::<3>(twiddle_list, 0); // [H, Nd/2, E]
-
+        
         LearnedPermuter {
             signs,
             //perms,
@@ -268,14 +278,17 @@ impl LearnedPermuterConfig {
             seq_length: self.seq_length,
             pad_length,
             stage: self.stage,
-            sinkhorn_iters: self.sinkhorn_iters
+            sinkhorn_iters: self.sinkhorn_iters,
+            temperature: self.temperature,
+            linear: LinearConfig::new(pad_length * self.num_heads, self.seq_length).with_bias(false)
+                .init(device),
         }
     }
 }
 
 
-impl PermuterConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> Permuter<B> {
+impl StaticPermuterConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> StaticPermuter<B> {
         let distribution = Distribution::Uniform(-1.0, 1.0);
         let d = self.embed_dim * self.seq_length;
         let mut sign_per_head = Vec::<Tensor<B, 1>>::new();
@@ -290,100 +303,12 @@ impl PermuterConfig {
         let perms = Tensor::cat(perms_per_head, 0);
         let signs = Tensor::cat(sign_per_head, 0).unsqueeze();
 
-        Permuter {
+        StaticPermuter {
             signs,
             perms,
             num_heads: self.num_heads,
-        }
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct MHPermutMix<B: Backend> {
-    permuter: Permuter<B>,
-    linear: Linear<B>,
-    num_heads: usize,
-}
-
-#[derive(Config, Debug)]
-pub struct MHPermutMixConfig {
-    embed_dim: usize,
-    seq_length: usize,
-    num_heads: usize,
-    out_channels: usize,
-    num_encoders: usize,
-}
-
-impl<B: Backend> MHPermutMix<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let out = self.permuter.forward(x);
-        self.linear.forward(out)
-    }
-}
-
-impl MHPermutMixConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> MHPermutMix<B> {
-        MHPermutMix {
-            permuter: PermuterConfig::new(
-                self.embed_dim,
-                self.seq_length,
-                self.num_heads,
-                self.out_channels,
-                self.num_encoders,
-            )
-            .init(device),
-            linear: LinearConfig::new(self.embed_dim * self.num_heads, self.out_channels)
+            linear: LinearConfig::new(self.embed_dim * self.num_heads, self.embed_dim)
                 .init(device),
-            num_heads: self.num_heads,
-        }
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct MHPermutMixMatrix<B: Backend> {
-    permuter: LearnedPermuter<B>,
-    linear: Linear<B>,
-    num_heads: usize,
-}
-
-#[derive(Config, Debug)]
-pub struct MHPermutMixMatrixConfig {
-    embed_dim: usize,
-    seq_length: usize,
-    num_heads: usize,
-    out_channels: usize,
-    num_encoders: usize,
-    encoder: usize
-}
-
-impl<B: Backend> MHPermutMixMatrix<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        // [B, E, H*N]
-        let out = self.permuter.forward(x);
-        //out.matmul(self.permuter.proj.val()).swap_dims(1, 2)
-        self.linear.forward(out).swap_dims(1, 2)
-        //out
-    }
-}
-
-impl MHPermutMixMatrixConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> MHPermutMixMatrix<B> {
-        let pad_length = self.seq_length.next_power_of_two();
-        MHPermutMixMatrix {
-            permuter: LearnedPermuterConfig::new(
-                self.embed_dim,
-                self.seq_length,
-                self.num_heads,
-                self.out_channels,
-                self.num_encoders,
-                self.encoder
-            )
-            .init(device),
-            //linear: LinearConfig::new(pad_length * self.num_heads, self.seq_length).with_bias(false).with_initializer(nn::Initializer::Ones)
-            //    .init(device).no_grad(),
-            linear: LinearConfig::new(pad_length * self.num_heads, self.seq_length).with_bias(false)
-                .init(device),
-            num_heads: self.num_heads,
         }
     }
 }

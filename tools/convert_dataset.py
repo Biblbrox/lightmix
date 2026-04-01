@@ -3,18 +3,18 @@ import argparse
 from os import mkdir
 import io
 from os.path import exists, isfile
-import numpy as np
 from pathlib import Path
 
 import polars as pl
 from PIL import Image
 
 DATASET_SPECS = {
-    "imagenet1k": {"size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
-    "tinyimagenet": {"size": None, "crop": None, "channels": 3},
-    "cifar100": {"size": None, "crop": None, "channels": 3},
-    "mnist": {"size": None, "crop": None, "channels": 1},
-    "fashionmnist": {"size": None, "crop": None, "channels": 1},
+    "imagenet1k":   {"imagecol":  "image",     "size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
+    "tinyimagenet": {"imagecol":  "image",      "size": None, "crop": None, "channels": 3},
+    "cifar100":     {"imagecol":  "img",      "size": None, "crop": None, "channels": 3},
+    "cifar10":      {"imagecol":  "img",      "size": None, "crop": None, "channels": 3},
+    "mnist":        {"imagecol":  "image",      "size": None, "crop": None, "channels": 1},
+    "fashionmnist": {"imagecol":  "image",      "size": None, "crop": None, "channels": 1},
 }
 
 
@@ -36,7 +36,7 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
     batch_size = 2048
     arrow_path = out_path.joinpath(f"{parquet_path.stem}.arrow")
 
-    image_col = "img" if dataset == "cifar100" else "image"
+    image_col = DATASET_SPECS[dataset]["imagecol"]
     df = pl.scan_parquet(parquet_path)
     try:
         schema = df.collect_schema()
@@ -46,6 +46,7 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
     df = df.unnest(image_col).drop("path").rename({"bytes": "image"})
 
     print(schema)
+    # It would be nice to have a progress bar
     df.with_columns(
         pl.col("image").map_elements(
             lambda bytes: decode(bytes, spec), return_dtype=pl.Binary
@@ -90,7 +91,7 @@ if __name__ == "__main__":
         help="Dataset type",
         type=str,
         required=True,
-        choices=["imagenet1k", "cifar100", "mnist", "fashionmnist", "tinyimagenet"],
+        choices=DATASET_SPECS.keys(),
     )
     args = parser.parse_args()
 
