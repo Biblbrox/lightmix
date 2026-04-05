@@ -10,7 +10,7 @@ mod config;
 mod data;
 mod spectre_vit;
 mod vit;
-use std::{env::current_dir, fs::File, path::PathBuf};
+use std::{collections::HashMap, env::current_dir, fs::File, path::PathBuf};
 
 use crate::{
     config::Config, spectre_vit::SpectreViTConfig as ModelConfig,
@@ -33,6 +33,7 @@ fn init_logger() {
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();

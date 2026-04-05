@@ -40,6 +40,8 @@ target
 Cargo.lock
 *.local.toml
 
-# Profiling
+# Profiling & Logging
 *.ncu-rep
 *.log
+.env
+*.db
