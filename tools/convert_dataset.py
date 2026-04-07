@@ -9,12 +9,13 @@ import polars as pl
 from PIL import Image
 
 DATASET_SPECS = {
-    "imagenet1k":   {"imagecol":  "image",     "size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
-    "tinyimagenet": {"imagecol":  "image",      "size": None, "crop": None, "channels": 3},
-    "cifar100":     {"imagecol":  "img",      "size": None, "crop": None, "channels": 3},
-    "cifar10":      {"imagecol":  "img",      "size": None, "crop": None, "channels": 3},
-    "mnist":        {"imagecol":  "image",      "size": None, "crop": None, "channels": 1},
-    "fashionmnist": {"imagecol":  "image",      "size": None, "crop": None, "channels": 1},
+    "imagenet1k":   {"labelcol": "label", "imagecol":  "image",     "size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
+    "tinyimagenet": {"labelcol": "label", "imagecol":  "image",      "size": (64, 64), "crop": None, "channels": 3}, # Broken
+    "cifar100":     {"labelcol": "fine_label", "imagecol":  "img",      "size": None, "crop": None, "channels": 3},
+    "cifar10":      {"labelcol": "fine_label", "imagecol":  "img",      "size": None, "crop": None, "channels": 3},
+    "mnist":        {"labelcol": "label", "imagecol":  "image",      "size": None, "crop": None, "channels": 1},
+    "fashionmnist": {"labelcol": "label", "imagecol":  "image",      "size": None, "crop": None, "channels": 1},
+    "food101":      {"labelcol": "label", "imagecol":  "image",      "size": (96, 96), "crop": None, "channels": 3},
 }
 
 
@@ -28,7 +29,14 @@ def decode(raw: bytes, spec: dict) -> bytes:
         img = img.convert("RGB")
     elif spec["channels"] == 1 and img.mode != "L":
         img = img.convert("L")
-    return img.tobytes()
+
+    raw_bytes = img.tobytes()
+
+    expected = img.width * img.height * len(img.getbands())
+    if len(raw_bytes) != expected:
+        raise ValueError(f"Corrupted image: got {len(raw_bytes)}, expected {expected}")
+
+    return raw_bytes
 
 
 def write_arrow(parquet_path: Path, out_path: Path, dataset):
@@ -47,13 +55,17 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
 
     print(schema)
     # It would be nice to have a progress bar
-    df.with_columns(
+    df = df.with_columns(
         pl.col("image").map_elements(
             lambda bytes: decode(bytes, spec), return_dtype=pl.Binary
         )
-    ).sink_ipc(
+    )
+
+    df = df.with_columns(pl.col(["image", DATASET_SPECS[dataset]["labelcol"]]).shuffle(seed=42))
+
+    df.sink_ipc(
         arrow_path,
-        record_batch_size=batch_size,
+        record_batch_size=batch_size
     )  # , compression="lz4")
 
 
