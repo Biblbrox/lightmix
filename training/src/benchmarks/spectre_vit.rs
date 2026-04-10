@@ -1,9 +1,9 @@
 use burn::{Tensor, nn::{Linear, LinearConfig}, prelude::Backend, tensor::Distribution};
 use cubecl::{benchmark::Benchmark};
 
-use crate::spectre_vit::{
-    SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig, embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig}, permute::{LearnedPermuter, LearnedPermuterConfig, StaticPermuter, StaticPermuterConfig}
-};
+use crate::{mixing::{learnedmixer::{LearnedPermuter, LearnedPermuterConfig}, randommixer::{PermutationStrategy, StaticPermuter, StaticPermuterConfig}}, spectre_vit::{
+    SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig, embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig}
+}};
 
 
 pub struct SpectreLinearBenchmark<B: Backend> {
@@ -308,6 +308,7 @@ impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
                 self.num_heads,
                 self.out_channels,
                 1,
+                PermutationStrategy::Random,
             )
             .init(&self.device),
         )

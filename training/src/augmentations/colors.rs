@@ -111,7 +111,7 @@ impl<B: Backend> Augmentation<B> for RandomGrayscale<B> {
             let gray = r.clone() * 0.2989 + g.clone() * 0.5870 + b.clone() * 0.1140;
             return Tensor::cat(vec![gray.clone(), gray.clone(), gray], 1);
         }
-        return input;
+        input
     }
 }
 

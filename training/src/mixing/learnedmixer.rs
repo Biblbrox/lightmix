@@ -6,19 +6,6 @@ use burn::{
     }, prelude::*, tensor::Distribution
 };
 
-/// Permuter implementation with indicies
-///
-/// * `signs`: [TODO:parameter]
-/// * `perms`: [TODO:parameter]
-/// * `num_heads`: [TODO:parameter]
-#[derive(Module, Debug)]
-pub struct StaticPermuter<B: Backend> {
-    signs: Tensor<B, 2>,
-    perms: Tensor<B, 1, Int>,
-    num_heads: usize,
-    linear: Linear<B>
-}
-
 /// Permuter implementation with permutation matrix
 ///
 /// * `signs`: [TODO:parameter]
@@ -42,15 +29,6 @@ pub struct LearnedPermuter<B: Backend> {
 }
 
 #[derive(Config, Debug)]
-pub struct StaticPermuterConfig {
-    embed_dim: usize,
-    seq_length: usize,
-    num_heads: usize,
-    out_channels: usize,
-    num_encoders: usize,
-}
-
-#[derive(Config, Debug)]
 pub struct LearnedPermuterConfig {
     embed_dim: usize,
     seq_length: usize,
@@ -61,29 +39,6 @@ pub struct LearnedPermuterConfig {
     #[config(default = 20)]
     sinkhorn_iters: usize,
     temperature: f32,
-}
-
-impl<B: Backend> StaticPermuter<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let shape = x.shape();
-
-        // [B, N * E]
-        let x = x.reshape([shape[0], shape[1] * shape[2]]);
-        debug_assert_eq!(x.shape(), Shape::new([shape[0], shape[1] * shape[2]]));
-
-        // [H * N * E]
-        let perms = self.perms.clone();
-        let signs = self.signs.clone();
-
-        // [B, N * H * E]
-        let x = x.select(1, perms);
-
-        // [B, N * H * E]
-        let x = x * signs;
-        let x = x.reshape([shape[0], shape[1], shape[2] * self.num_heads]);
-
-        self.linear.forward(x)
-    }
 }
 
 impl<B: Backend> LearnedPermuter<B> {
@@ -181,8 +136,8 @@ impl<B: Backend> LearnedPermuter<B> {
         let x = x.repeat_dim(1, self.num_heads);             // [B, H*Nd, E]
 
         // Butterfly mix (learnable twiddle)
-        let spectral = self.butterfly_mix(x.clone()) + x;   // [B, H*Nd, E]
-        //let spectral = x.clone();   // [B, H*Nd, E]
+        //let spectral = self.butterfly_mix(x.clone());   // [B, H*Nd, E]
+        let spectral = x.clone();   // [B, H*Nd, E]
 
         //let permuted = if self.sinkhorn_scores.is_require_grad() {
         let p    = self.sinkhorn(self.sinkhorn_scores.val());        // [H, Nd, Nd]
@@ -194,6 +149,7 @@ impl<B: Backend> LearnedPermuter<B> {
         //};
 
         let permuted = permuted * self.signs.clone();
+        let permuted = self.butterfly_mix(permuted.clone());   // [B, H*Nd, E]
 
         // [B, E, H*Nd]
         let permuted = permuted.swap_dims(1, 2); 
@@ -286,29 +242,3 @@ impl LearnedPermuterConfig {
     }
 }
 
-
-impl StaticPermuterConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> StaticPermuter<B> {
-        let distribution = Distribution::Uniform(-1.0, 1.0);
-        let d = self.embed_dim * self.seq_length;
-        let mut sign_per_head = Vec::<Tensor<B, 1>>::new();
-        let mut perms_per_head = Vec::<Tensor<B, 1, Int>>::new();
-        (0..self.num_heads).for_each(|_| {
-            let rand_indices =
-                Tensor::<B, 1>::random([d], Distribution::Uniform(0.0, 1.0), device).argsort(0);
-
-            perms_per_head.push(rand_indices);
-            sign_per_head.push(Tensor::<B, 1>::random([d], distribution, device).sign())
-        });
-        let perms = Tensor::cat(perms_per_head, 0);
-        let signs = Tensor::cat(sign_per_head, 0).unsqueeze();
-
-        StaticPermuter {
-            signs,
-            perms,
-            num_heads: self.num_heads,
-            linear: LinearConfig::new(self.embed_dim * self.num_heads, self.embed_dim)
-                .init(device),
-        }
-    }
-}

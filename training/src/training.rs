@@ -3,18 +3,28 @@ use std::{path::PathBuf, sync::Arc};
 use burn::{
     backend::autodiff::checkpoint::strategy::CheckpointStrategy,
     lr_scheduler::{
-        LrScheduler, cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig}, linear::{LinearLrScheduler, LinearLrSchedulerConfig}
+        LrScheduler,
+        cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig},
+        linear::{LinearLrScheduler, LinearLrSchedulerConfig},
     },
     module::Module,
     nn::{LinearRecord, loss::CrossEntropyLossConfig},
     optim::{AdamW, AdamWConfig, Optimizer, adaptor::OptimizerAdaptor},
     prelude::Backend,
-    record::{CompactRecorder, DefaultRecorder, FullPrecisionSettings, NamedMpkFileRecorder, Record, Recorder},
+    record::{
+        CompactRecorder, DefaultRecorder, FullPrecisionSettings, NamedMpkFileRecorder, Record,
+        Recorder,
+    },
     tensor::{Int, Tensor, backend::AutodiffBackend},
     train::{
-        ClassificationOutput, EarlyStoppingStrategy, InferenceStep, Learner, LearnerOptimizerRecord, MetricEarlyStoppingStrategy, StoppingCondition, SupervisedTraining, TrainOutput, TrainStep, TrainingStrategy, checkpoint::CheckpointingStrategy, metric::{
-            AccuracyMetric, Adaptor, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric, LossMetric, Metric, TopKAccuracyMetric
-        }
+        ClassificationOutput, EarlyStoppingStrategy, InferenceStep, Learner,
+        LearnerOptimizerRecord, MetricEarlyStoppingStrategy, StoppingCondition, SupervisedTraining,
+        TrainOutput, TrainStep, TrainingStrategy,
+        checkpoint::CheckpointingStrategy,
+        metric::{
+            AccuracyMetric, Adaptor, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric,
+            LossMetric, Metric, TopKAccuracyMetric,
+        },
     },
 };
 
@@ -24,17 +34,27 @@ use crate::{
         colors::{ColorJitter, RandomGrayscale},
         normalize::Normalize,
         rotation::{Orientation, RandomAffine, RandomFlip},
-    }, config::Config, data::{
+    },
+    config::Config,
+    data::{
         batch::{
-            Batch, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher, tinyimagenet::TinyImageNetBatcher
+            Batch, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher,
+            food101::Food101Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
+            tinyimagenet::TinyImageNetBatcher,
         },
         builder::StreamingDataLoaderBuilder,
         dataset::{
-            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset, fashionmnist::FashionMnistDataset, imagenet1k::ImageNet1kDataset, mnist::MnistDataset, tinyimagenet::TinyImageNetDataset
+            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset,
+            fashionmnist::FashionMnistDataset, food101::Food101Dataset,
+            imagenet1k::ImageNet1kDataset, mnist::MnistDataset, tinyimagenet::TinyImageNetDataset,
         },
-        mapper::{cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper, tinyimagenet::TinyImageNetMapper},
+        mapper::{
+            cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper, food101::Food101Mapper,
+            imagenet1k::ImageNet1kMapper, mnist::MnistMapper, tinyimagenet::TinyImageNetMapper,
+        },
         strategy::buffered::BufferedBatchStrategy,
-    }, spectre_vit::{SpectreViT as Model, SpectreViTConfig}
+    },
+    models::spectre_vit::{SpectreViT as Model, SpectreViTConfig},
 };
 
 type Dataset = FashionMnistDataset;
@@ -44,6 +64,10 @@ type Mapper = FashionMnistMapper;
 //type Dataset = TinyImageNetDataset;
 //type Batcher = TinyImageNetBatcher;
 //type Mapper = TinyImageNetMapper;
+
+//type Dataset = Food101Dataset;
+//type Batcher = Food101Batcher;
+//type Mapper = Food101Mapper;
 
 //type Dataset = Cifar100Dataset;
 //type Batcher = Cifar100Batcher;
@@ -101,18 +125,29 @@ pub fn train<B: AutodiffBackend>(
         std::fs::remove_dir_all(artifact_dir).ok();
         std::fs::create_dir_all(artifact_dir).ok();
     }
-    
-    config
-        .save(PathBuf::from(format!("{artifact_dir}/config.json")).as_path());
+
+    config.save(PathBuf::from(format!("{artifact_dir}/config.json")).as_path());
 
     B::seed(&device, config.random_seed as u64);
 
     let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
-    let strategy = BufferedBatchStrategy::new(config.batch_size as usize, 100, config.num_workers as usize); //.with_mapper(Mapper::decoder());
+    let strategy = BufferedBatchStrategy::new(
+        config.batch_size as usize,
+        config.batch_size as usize,
+        config.num_workers as usize,
+    ); //.with_mapper(Mapper::decoder());
 
-    let normalize = Box::new(Normalize::<B>::new(config.std.clone(), config.mean.clone(), &device));
-    let normalize_val = Box::new(Normalize::<B::InnerBackend>::new(config.std, config.mean, &device));
+    let normalize = Box::new(Normalize::<B>::new(
+        config.std.clone(),
+        config.mean.clone(),
+        &device,
+    ));
+    let normalize_val = Box::new(Normalize::<B::InnerBackend>::new(
+        config.std,
+        config.mean,
+        &device,
+    ));
     let random_flip_hor = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
     let random_flip_ver = Box::new(RandomFlip::<B>::new(0.5, Orientation::Vertical));
     let random_affine = Box::new(RandomAffine::<B>::new(0.5, 30.0));
@@ -167,11 +202,12 @@ pub fn train<B: AutodiffBackend>(
 
     let mut model = model.init::<B>(&device);
     let mut optimizer = optimizer.init();
-    let mut scheduler= CosineAnnealingLrSchedulerConfig::new(
-            config.learning_rate,
-            config.epochs as usize * (dataloader_train.num_items() / config.batch_size as usize),
-        )
-        .init().unwrap();
+    let mut scheduler = CosineAnnealingLrSchedulerConfig::new(
+        config.learning_rate,
+        config.epochs as usize * (dataloader_train.num_items() / config.batch_size as usize),
+    )
+    .init()
+    .unwrap();
 
     if config.continue_training {
         let epoch = config.resume_epoch;
@@ -180,14 +216,17 @@ pub fn train<B: AutodiffBackend>(
         let scheduler_path = format!("{artifact_dir}/scheduler-{epoch}.mpk");
         model = model.load_file(model_path, &recorder, &device).unwrap();
         optimizer = optimizer.load_record(recorder.load(optimizer_path.into(), &device).unwrap());
-        scheduler = scheduler.load_record::<B>(<NamedMpkFileRecorder<FullPrecisionSettings> as Recorder<B>>::load::<usize>(&recorder, scheduler_path.into(), &device).unwrap());
+        scheduler = scheduler.load_record::<B>(
+            <NamedMpkFileRecorder<FullPrecisionSettings> as Recorder<B>>::load::<usize>(
+                &recorder,
+                scheduler_path.into(),
+                &device,
+            )
+            .unwrap(),
+        );
     }
 
-    let result = learner.launch(Learner::new(
-        model,
-        optimizer,
-        scheduler,
-    ));
+    let result = learner.launch(Learner::new(model, optimizer, scheduler));
 
     result
         .model
