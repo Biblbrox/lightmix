@@ -4,7 +4,6 @@ mod augmentations;
 mod config;
 mod data;
 mod mixing;
-mod model;
 mod models;
 mod norm;
 mod tokenization;

@@ -3,15 +3,11 @@ use burn::{
     config::Config,
     module::Module,
     nn::{
-        Dropout, DropoutConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig,
+        Dropout, DropoutConfig, Gelu, Linear, LinearConfig,
         pool::{AdaptiveAvgPool1d, AdaptiveAvgPool1dConfig},
     },
     prelude::Backend,
-    tensor::{
-        Int,
-        module::{adaptive_avg_pool1d, adaptive_avg_pool2d, avg_pool1d},
-        s,
-    },
+    tensor::module::adaptive_avg_pool1d,
 };
 
 use crate::{
