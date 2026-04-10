@@ -3,6 +3,7 @@ pub mod imagenet1k;
 pub mod mnist;
 pub mod fashionmnist;
 pub mod tinyimagenet;
+pub mod food101;
 
 use polars::prelude::*;
 

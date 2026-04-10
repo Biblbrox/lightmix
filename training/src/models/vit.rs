@@ -7,9 +7,7 @@ use burn::{
     prelude::*,
 };
 
-use crate::vit::embeddings::{PatchEmbedding, PatchEmbeddingConfig};
-
-mod embeddings;
+use crate::tokenization::vit::{PatchEmbedding, PatchEmbeddingConfig};
 
 #[derive(Module, Debug)]
 pub struct ViT<B: Backend> {
@@ -70,7 +68,7 @@ impl ViTConfig {
 mod tests {
     use burn_cuda::Cuda;
 
-    use crate::vit::embeddings::PatcherConfig;
+    use crate::tokenization::vit::PatcherConfig;
 
     use super::*;
 

@@ -1,20 +1,18 @@
 #![recursion_limit = "2048"]
 
-mod model;
-mod norm;
-mod training;
-mod utils;
-
 mod augmentations;
 mod config;
 mod data;
-mod spectre_vit;
-mod vit;
+mod mixing;
+mod models;
+mod norm;
+mod tokenization;
+mod training;
+mod utils;
+
 use std::{collections::HashMap, env::current_dir, fs::File, path::PathBuf};
 
-use crate::{
-    config::Config, spectre_vit::SpectreViTConfig as ModelConfig,
-};
+use crate::{config::Config, models::spectre_vit::SpectreViTConfig as ModelConfig};
 use burn::{
     backend::{Autodiff, Cuda, NdArray},
     optim::AdamWConfig,
@@ -72,7 +70,7 @@ fn main() {
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = format!(
-        "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}",
+        "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}-weightedpermut",
         model_name,
         dataset,
         config.num_heads,
@@ -85,22 +83,22 @@ fn main() {
         dataset_path,
         config.clone(),
         device.clone(),
-ModelConfig::new(
-                config.in_channels as usize,
-                config.embed_dim as usize,
-                config.num_heads as usize,
-                config.num_encoders as usize,
-                config.num_classes as usize,
-                config.patch_size as usize,
-                config.img_size as usize,
-                config.hidden_dim as usize,
-                config.dropout,
-                config.sinkhorn_temp as f32
-            ),
-            AdamWConfig::new()
-                .with_weight_decay(config.adam_weight_decay as f32)
-                .with_beta_1(config.adam_betas[0] as f32)
-                .with_beta_2(config.adam_betas[1] as f32),
+        ModelConfig::new(
+            config.in_channels as usize,
+            config.embed_dim as usize,
+            config.num_heads as usize,
+            config.num_encoders as usize,
+            config.num_classes as usize,
+            config.patch_size as usize,
+            config.img_size as usize,
+            config.hidden_dim as usize,
+            config.dropout,
+            config.sinkhorn_temp as f32,
+        ),
+        AdamWConfig::new()
+            .with_weight_decay(config.adam_weight_decay as f32)
+            .with_beta_1(config.adam_betas[0] as f32)
+            .with_beta_2(config.adam_betas[1] as f32),
     );
 
     //crate::inference::infer::<MyBackend>(

@@ -52,6 +52,31 @@ continue_training = false
 resume_epoch = 1
 
 
+[food101]
+num_classes = 101
+img_size = 96
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[food101.spectre_vit]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+patch_size = 8
+num_heads = 8
+dropout = 0.001
+hidden_dim = 768
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 4
+embed_dim = 512
+continue_training = false
+resume_epoch = 1
+
+
+
 [cifar100]
 num_classes = 100
 img_size = 32

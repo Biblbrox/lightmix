@@ -5,7 +5,6 @@ use burn::{
     prelude::Backend,
     tensor::Shape,
 };
-mod benchmark;
 
 #[derive(Module, Debug)]
 pub struct DynamicERF<B: Backend> {

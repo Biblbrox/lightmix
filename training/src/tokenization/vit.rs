@@ -68,8 +68,7 @@ impl<B: Backend> PatchEmbedding<B> {
         // Concatenate cls token and image patches
         let x = Tensor::cat(Vec::from([cls_token_batch, patches]), 1);
         let x = self.position_embeddings.val() + x;
-        let x = self.dropout.forward(x);
-        x // [batch_size, total_patch_dim + 1, embed_dim]
+        self.dropout.forward(x) // [batch_size, total_patch_dim + 1, embed_dim]
     }
 }
 

@@ -1,25 +1,23 @@
-mod benchmark;
-mod embeddings;
-mod permute;
-
 use burn::{
     Tensor,
     config::Config,
     module::Module,
     nn::{
-        Dropout, DropoutConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig,
+        Dropout, DropoutConfig, Gelu, Linear, LinearConfig,
         pool::{AdaptiveAvgPool1d, AdaptiveAvgPool1dConfig},
     },
     prelude::Backend,
-    tensor::s,
+    tensor::module::adaptive_avg_pool1d,
 };
 
 use crate::{
-    norm::{DynamicERF, DynamicERFConfig},
-    spectre_vit::{
-        embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
-        permute::{LearnedPermuter, LearnedPermuterConfig},
+    mixing::{
+        learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
+        randommixer::{PermutationStrategy, StaticPermuter, StaticPermuterConfig},
+        weightedmixer::{WeightedPermuter, WeightedPermuterConfig},
     },
+    norm::{DynamicERF, DynamicERFConfig},
+    tokenization::spectre_vit::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
 };
 
 #[derive(Module, Debug)]
@@ -40,12 +38,14 @@ pub struct SpectreLinearConfig {
 pub struct SpectreEncoderLayer<B: Backend> {
     linear1: Linear<B>,
     linear2: Linear<B>,
-    mix_layer: LearnedPermuter<B>,
+    //mix_layer: LearnedPermuter<B>,
+    //mix_layer: StaticPermuter<B>,
+    mix_layer: WeightedPermuter<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
     dropout: Dropout,
-    activation: Gelu
+    activation: Gelu,
 }
 
 #[derive(Config, Debug)]
@@ -58,7 +58,7 @@ pub struct SpectreEncoderLayerConfig {
     activation: String,
     num_encoders: usize,
     encoder: usize,
-    sinkhorn_temp: f32
+    sinkhorn_temp: f32,
 }
 
 #[derive(Module, Debug)]
@@ -76,7 +76,7 @@ pub struct SpectreEncoderConfig {
     hid_dim: usize,
     dropout: f64,
     activation: String,
-    sinkhorn_temp: f32
+    sinkhorn_temp: f32,
 }
 
 #[derive(Module, Debug)]
@@ -98,7 +98,7 @@ pub struct SpectreViTConfig {
     image_size: usize,
     hid_dim: usize,
     dropout: f64,
-    sinkhorn_temp: f32
+    sinkhorn_temp: f32,
 }
 
 impl<B: Backend> SpectreLinear<B> {
@@ -123,12 +123,18 @@ impl SpectreLinearConfig {
 
 impl<B: Backend> SpectreEncoderLayer<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.norm1.forward(x.clone() + self.dropout.forward(self.mix_layer.forward(x.clone())));
+        let x = self
+            .norm1
+            .forward(x.clone() + self.dropout.forward(self.mix_layer.forward(x.clone())));
+        //let x = self.norm1.forward(self.dropout.forward(self.mix_layer.forward(x.clone())));
+        //let x = self.mix_layer.forward(x.clone());
         self.norm2.forward(x.clone() + self._ff_block(x))
     }
 
     pub fn _ff_block(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.dropout.forward(self.activation.forward(self.linear1.forward(x)));
+        let x = self
+            .dropout
+            .forward(self.activation.forward(self.linear1.forward(x)));
         self.dropout.forward(self.linear2.forward(x))
     }
 }
@@ -138,20 +144,36 @@ impl SpectreEncoderLayerConfig {
         SpectreEncoderLayer {
             linear1: LinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
             linear2: LinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
-            mix_layer: LearnedPermuterConfig::new(
+            //mix_layer: LearnedPermuterConfig::new(
+            //    self.embed_dim,
+            //    self.seq_length,
+            //    self.num_heads,
+            //    self.embed_dim,
+            //    self.num_encoders,
+            //    self.encoder,
+            //    self.sinkhorn_temp
+            //).init(device),
+            //mix_layer: StaticPermuterConfig::new(
+            //    self.embed_dim,
+            //    self.seq_length,
+            //    self.num_heads,
+            //    self.embed_dim,
+            //    self.num_encoders,
+            //    PermutationStrategy::Random
+            //).init(device),
+            mix_layer: WeightedPermuterConfig::new(
                 self.embed_dim,
                 self.seq_length,
                 self.num_heads,
                 self.embed_dim,
                 self.num_encoders,
                 self.encoder,
-    self.sinkhorn_temp
             )
             .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
-            activation: Gelu
+            activation: Gelu,
         }
     }
 }
@@ -186,8 +208,7 @@ impl SpectreEncoderConfig {
                     self.activation.clone(),
                     self.num_layers,
                     encoder,
-                    self.sinkhorn_temp
-
+                    self.sinkhorn_temp,
                 )
                 .init(device),
             );
@@ -204,7 +225,11 @@ impl<B: Backend> SpectreViT<B> {
         let x = self.embedding_block.forward(images);
         let x = self.encoder.forward(x);
         let x = self.layer_norm.forward(x);
-        self.linear.forward(x.slice(s![.., 0, ..])).squeeze() // [batch_size, num_classes]
+        //self.linear.forward(x.slice(s![.., 0, ..])).squeeze() // [batch_size, num_classes]
+        self.linear
+            .forward(adaptive_avg_pool1d(x.transpose(), 1).transpose())
+            .squeeze()
+        //self.linear.forward(x.mean_dim(1)).squeeze() // [batch_size, num_classes]
     }
 }
 
@@ -217,7 +242,7 @@ impl SpectreViTConfig {
                 self.embed_dim,
                 self.patch_size,
                 self.image_size,
-                self.dropout
+                self.dropout,
             )
             .init(device),
 
@@ -229,7 +254,7 @@ impl SpectreViTConfig {
                 self.hid_dim,
                 self.dropout,
                 "relu".to_string(),
-                self.sinkhorn_temp
+                self.sinkhorn_temp,
             )
             .init(device),
             layer_norm: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
@@ -242,7 +267,7 @@ impl SpectreViTConfig {
 mod tests {
     use burn::tensor::Shape;
 
-    use crate::spectre_vit::embeddings::SpectrePatcherConfig;
+    use crate::tokenization::spectre_vit::SpectrePatcherConfig;
 
     use super::*;
 
@@ -292,8 +317,9 @@ mod tests {
             &device,
         );
 
-        let model = SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE, DROPOUT)
-            .init(&device);
+        let model =
+            SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE, DROPOUT)
+                .init(&device);
         let vit_input = model.forward(test_image);
         assert_eq!(
             vit_input.shape(),
@@ -322,7 +348,7 @@ mod tests {
             IMG_SIZE,
             HIDDEN_DIM,
             DROPOUT,
-            SINKHORNE_TEMPERATURE
+            SINKHORNE_TEMPERATURE,
         )
         .init(&device);
         let vit_output = model.forward(test_image);

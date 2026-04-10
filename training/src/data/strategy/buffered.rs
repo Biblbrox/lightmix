@@ -45,8 +45,8 @@ impl BufferedBatchStrategy {
 impl Clone for BufferedBatchStrategy {
     fn clone(&self) -> Self {
         Self {
-            //recv: None,
-            recv: self.recv.clone(),
+            recv: None,
+            //recv: self.recv.clone(),
             mapper: self.mapper.clone(),
             shuffle: self.shuffle,
             batch_size: self.batch_size,

@@ -1,4 +1,4 @@
-use std::{default, fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::Path};
 
 use serde::Serialize;
 use toml::{Table, Value};
@@ -28,7 +28,7 @@ pub struct Config {
     pub num_workers: i64,
     pub continue_training: bool,
     pub resume_epoch: i64,
-    pub sinkhorn_temp: f64
+    pub sinkhorn_temp: f64,
 }
 
 impl Config {
@@ -80,23 +80,29 @@ impl Config {
             num_encoders: config[dataset][model]["num_encoders"].as_integer().unwrap(),
             embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
             num_workers: config["num_workers"].as_integer().unwrap(),
-            continue_training: config[dataset][model]["continue_training"].as_bool().unwrap(),
+            continue_training: config[dataset][model]["continue_training"]
+                .as_bool()
+                .unwrap(),
             resume_epoch: config[dataset][model]["resume_epoch"].as_integer().unwrap(),
-            mean: config[dataset]["mean"].as_array()
+            mean: config[dataset]["mean"]
+                .as_array()
                 .unwrap()
                 .iter()
-                .map(|v| v.as_float().unwrap() as f32).collect(),
-            std: config[dataset]["std"].as_array()
+                .map(|v| v.as_float().unwrap() as f32)
+                .collect(),
+            std: config[dataset]["std"]
+                .as_array()
                 .unwrap()
                 .iter()
-                .map(|v| v.as_float().unwrap() as f32).collect(),
-            sinkhorn_temp: config["sinkhorn_temp"].as_float().unwrap()
+                .map(|v| v.as_float().unwrap() as f32)
+                .collect(),
+            sinkhorn_temp: config["sinkhorn_temp"].as_float().unwrap(),
         }
     }
 
     pub fn save(&self, path: &Path) {
         let mut file = File::create(path).unwrap();
-    
+
         let config = toml::to_string_pretty(self);
         file.write_all(config.unwrap().as_bytes()).unwrap();
     }
@@ -119,7 +125,6 @@ impl Config {
             }
         }
     }
-
 }
 
 #[cfg(test)]
