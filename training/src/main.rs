@@ -57,7 +57,7 @@ fn main() {
             localpath.to_str().unwrap()
         );
     }
-    let dataset = "fashionmnist";
+    let dataset = "food101";
     let model_name = "spectre_vit";
     let config = Config::parse(&path, dataset, model_name, Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());

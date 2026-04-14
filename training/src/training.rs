@@ -58,17 +58,17 @@ use crate::{
     models::spectre_vit::{SpectreViT as Model, SpectreViTConfig},
 };
 
-type Dataset = FashionMnistDataset;
-type Batcher = FashionMnistBatcher;
-type Mapper = FashionMnistMapper;
+//type Dataset = FashionMnistDataset;
+//type Batcher = FashionMnistBatcher;
+//type Mapper = FashionMnistMapper;
 
 //type Dataset = TinyImageNetDataset;
 //type Batcher = TinyImageNetBatcher;
 //type Mapper = TinyImageNetMapper;
 
-//type Dataset = Food101Dataset;
-//type Batcher = Food101Batcher;
-//type Mapper = Food101Mapper;
+type Dataset = Food101Dataset;
+type Batcher = Food101Batcher;
+type Mapper = Food101Mapper;
 
 //type Dataset = Cifar100Dataset;
 //type Batcher = Cifar100Batcher;
@@ -160,10 +160,11 @@ pub fn train<B: AutodiffBackend>(
     let random_gray = Box::new(RandomGrayscale::<B>::new(0.5, &device));
 
     let transforms_train: Vec<Box<dyn Augmentation<B>>> = vec![
-        //random_flip_hor,
-        //color_jitter,
+        random_flip_hor,
+        color_jitter,
         //random_gray,
-        //random_affine,
+        random_affine,
+        //random_flip_ver,
         normalize,
     ]; //, color_jitter, random_flip_hor, random_flip_ver];
     let pipeline_train = Pipeline::new(transforms_train);

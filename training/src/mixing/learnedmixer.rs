@@ -5,11 +5,7 @@ use burn::{
     tensor::Distribution,
 };
 
-/// Permuter implementation with permutation matrix
-///
-/// * `signs`: [TODO:parameter]
-/// * `perms`: [TODO:parameter]
-/// * `num_heads`: [TODO:parameter]
+/// Permuter implementation with learned permutation matrix
 #[derive(Module, Debug)]
 pub struct LearnedPermuter<B: Backend> {
     signs: Param<Tensor<B, 3>>,
@@ -28,10 +24,9 @@ pub struct LearnedPermuterConfig {
     embed_dim: usize,
     seq_length: usize,
     num_heads: usize,
-    out_channels: usize,
+    temperature: f32,
     #[config(default = 20)]
     sinkhorn_iters: usize,
-    temperature: f32,
 }
 
 impl<B: Backend> LearnedPermuter<B> {
@@ -49,7 +44,6 @@ impl<B: Backend> LearnedPermuter<B> {
             p = p.clone() / p.clone().sum_dim(1); // col-normalise -> cols sum to 1
         }
 
-        //info!("{p}");
         p // [H, Nd, Nd]
     }
 
@@ -57,71 +51,6 @@ impl<B: Backend> LearnedPermuter<B> {
         let p = self.sinkhorn(self.sinkhorn_scores.val());
         self.sinkhorn_matrix = Some(p);
         self
-    }
-
-    fn permute_blocks(
-        &self,
-        x: Tensor<B, 3>,
-        stage: usize,
-        batch: usize,
-        nd: usize,
-        dim: usize,
-        n_blocks: usize,
-        s: usize,
-    ) -> Tensor<B, 3> {
-        let block_size = 2 * s;
-        let device = x.device();
-
-        // Build block index order depending on strategy for this stage
-        let block_order: Vec<i64> = match stage % 4 {
-            // Bit-reversal: mimics FFT natural order
-            // [0,1,2,3] -> [0,2,1,3]
-            0 => (0..n_blocks)
-                .map(|i| self.bit_reverse(i, n_blocks) as i64)
-                .collect(),
-
-            // Stride-2 interleave: even blocks first, then odd
-            // [0,1,2,3] -> [0,2,1,3]
-            1 => (0..n_blocks)
-                .step_by(2)
-                .chain((1..n_blocks).step_by(2))
-                .map(|i| i as i64)
-                .collect(),
-
-            // Reverse: coarsest block moves to finest position
-            // [0,1,2,3] -> [3,2,1,0]
-            2 => (0..n_blocks).rev().map(|i| i as i64).collect(),
-
-            // Rotate by half: wrap-around shift
-            // [0,1,2,3] -> [2,3,0,1]
-            _ => {
-                let half = n_blocks / 2;
-                (half..n_blocks).chain(0..half).map(|i| i as i64).collect()
-            }
-        };
-
-        // Apply block reorder via gather
-        let idx = Tensor::<B, 1, Int>::from_ints(block_order.as_slice(), &device)
-            .reshape([1, n_blocks, 1, 1])
-            .repeat_dim(0, batch)
-            .repeat_dim(2, block_size)
-            .repeat_dim(3, dim); // [B, n_blocks, 2s, E]
-
-        x.reshape([batch, n_blocks, block_size, dim])
-            .gather(1, idx)
-            .reshape([batch, nd, dim])
-    }
-
-    // Bit-reversal helper: reverse the log2(n) bits of i
-    fn bit_reverse(&self, i: usize, n: usize) -> usize {
-        let bits = n.trailing_zeros() as usize;
-        let mut x = i;
-        let mut y = 0;
-        for _ in 0..bits {
-            y = (y << 1) | (x & 1);
-            x >>= 1;
-        }
-        y
     }
 
     fn get_permutation(&self) -> Tensor<B, 3> {
@@ -143,7 +72,7 @@ impl<B: Backend> LearnedPermuter<B> {
 
         let permuted = if self.sinkhorn_scores.is_require_grad() {
             // Training: soft matmul, gradients flow through P
-            let p4d = p_soft.unsqueeze_dim::<4>(0).repeat_dim(0, b); // [B, H, Nd, Nd]
+            let p4d = p_soft.unsqueeze_dim::<4>(0); //.repeat_dim(0, b); // [B, H, Nd, Nd]
             p4d.matmul(x_heads) // [B, H, Nd, E/H]
         } else {
             // Expand indices to [B, H, Nd] then [B, H, Nd, E/H] for gather
@@ -165,9 +94,9 @@ impl<B: Backend> LearnedPermuter<B> {
                 .reshape([1, self.num_heads, self.seq_length, head_dim]);
         let permuted = permuted * signs;
 
-        let permuted = permuted.swap_dims(1, 2).reshape([b, self.seq_length, e]);
+        let permuted = permuted.swap_dims(1, 2).reshape([b, e, self.seq_length]);
 
-        self.linear.forward(permuted)
+        self.linear.forward(permuted).transpose()
     }
 }
 
@@ -185,8 +114,6 @@ impl LearnedPermuterConfig {
             let signs = Tensor::<B, 2>::random([nd, head_dim], distribution, device).sign();
 
             let noise = Tensor::<B, 2>::random([nd, nd], Distribution::Normal(0.0, 0.1), device);
-            // Approximate identity init: add a constant to the diagonal
-            // Burn has no eye(), so build it as: arange outer-equal mask
             let idx = Tensor::<B, 1, Int>::arange(0..nd as i64, device);
             let rows = idx.clone().reshape([nd, 1]).float();
             let cols = idx.reshape([1, nd]).float();
@@ -209,7 +136,7 @@ impl LearnedPermuterConfig {
             seq_length: self.seq_length,
             sinkhorn_iters: self.sinkhorn_iters,
             temperature: self.temperature,
-            linear: LinearConfig::new(self.embed_dim, self.embed_dim)
+            linear: LinearConfig::new(self.seq_length, self.seq_length)
                 .with_bias(false)
                 .init(device),
             sinkhorn_matrix: None,

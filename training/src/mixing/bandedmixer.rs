@@ -13,7 +13,6 @@ pub struct BandedMixerConfig {
     pub embed_dim: usize,
     pub seq_length: usize,
     pub num_heads: usize,
-    pub out_channels: usize,
     pub kernel_size: usize,
     #[config(default = 20)]
     pub sinkhorn_iters: usize,
@@ -30,14 +29,20 @@ pub struct BandedMixer<B: Backend> {
     temperature: f32,
     half_width: usize,
     num_heads: usize,
+    tok_idx: Tensor<B, 3, Int>,
 }
 
 impl<B: Backend> BandedMixer<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+    //pub fn precompute_permutation(mut self) -> Self {
+    //    let indices = self.sinkhorn(self.sinkhorn_scores.val());
+    //    self.sinkhorn_matrix = Some(p);
+    //    self
+    //}
+
+    fn learned_permut(&self, x: Tensor<B, 3>) -> (Tensor<B, 4>, Tensor<B, 4>) {
         let [b, n, e] = x.dims();
         let h = self.num_heads;
         let dk = e / h;
-        let w = self.half_width;
 
         // Q K V via depthwise conv
         let x_t = x.clone().swap_dims(1, 2); // [B, E, N]
@@ -54,12 +59,20 @@ impl<B: Backend> BandedMixer<B> {
         let scores = self.banded_scores(&q, &k);
 
         let p = self.banded_softmax(scores); // [B, H, N, 2w+1]
+        (p, v)
+    }
 
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let [b, n, e] = x.dims();
+        let h = self.num_heads;
+        let dk = e / h;
+
+        let (p, v) = self.learned_permut(x);
         let routed = if self.band_bias.is_require_grad() {
             self.banded_matvec(&p, &v) // [B, H, N, dk]
         } else {
             let offsets = p.argmax(3).squeeze_dim::<3>(3); // [B, H, N]
-            self.hard_gather(&v, offsets, w, h, n, dk) // [B, H, N, dk]
+            self.hard_gather(&v, offsets, n, dk) // [B, H, N, dk]
         };
 
         let routed = routed
@@ -129,20 +142,12 @@ impl<B: Backend> BandedMixer<B> {
         &self,
         v: &Tensor<B, 4>,
         offsets: Tensor<B, 3, Int>, // [B, H, N] — index into band [0, 2w]
-        w: usize,
-        h: usize,
         n: usize,
         dk: usize,
     ) -> Tensor<B, 4> {
-        let device = v.device();
-
-        // i_idx: absolute position of each query token [B, H, N]
-        let i_idx = Tensor::<B, 1, Int>::arange(0..n as i64, &device)
-            .reshape([1, 1, n])
-            .repeat_dim(1, h);
-
         // global_j = i - w + offset, clamped to valid range
-        let global_j = (i_idx - w as i64 + offsets).clamp(0, n as i64 - 1); // [B, H, N]
+        let global_j = (self.tok_idx.clone() - self.half_width.clone() as i64 + offsets)
+            .clamp(0, n as i64 - 1); // [B, H, N]
 
         // Expand to [B, H, N, dk] for gather along dim=2
         let indices = global_j.unsqueeze_dim::<4>(3).repeat_dim(3, dk); // [B, H, N, dk]
@@ -185,6 +190,9 @@ impl BandedMixerConfig {
             temperature: self.temperature,
             half_width: w,
             num_heads: self.num_heads,
+            tok_idx: Tensor::<B, 1, Int>::arange(0..self.seq_length as i64, &device)
+                .reshape([1, 1, self.seq_length])
+                .repeat_dim(1, self.num_heads), // i_idx: absolute position of each query token [B, H, N]
         }
     }
 }

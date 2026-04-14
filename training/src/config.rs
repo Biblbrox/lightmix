@@ -29,6 +29,7 @@ pub struct Config {
     pub continue_training: bool,
     pub resume_epoch: i64,
     pub sinkhorn_temp: f64,
+    pub kernel_size: Option<i64>,
 }
 
 impl Config {
@@ -78,6 +79,10 @@ impl Config {
                 .unwrap()
                 .into(),
             num_encoders: config[dataset][model]["num_encoders"].as_integer().unwrap(),
+            kernel_size: match config[dataset][model].get("kernel_size") {
+                Some(v) => Some(v.as_integer().unwrap()),
+                None => None,
+            },
             embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
             num_workers: config["num_workers"].as_integer().unwrap(),
             continue_training: config[dataset][model]["continue_training"]

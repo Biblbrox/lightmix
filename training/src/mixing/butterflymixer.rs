@@ -22,7 +22,6 @@ pub struct ButterflyMixerConfig {
     embed_dim: usize,
     seq_length: usize,
     num_heads: usize,
-    out_channels: usize,
     num_encoders: usize,
     stage: usize,
 }

@@ -5,7 +5,7 @@ pub fn print_bench_results(title: &str, results: &[(u32, BenchmarkComputations)]
     println!("| {:-<1$} |", "", 85);
     println!(
         "| {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>12} |",
-        field, "mean (µs)", "median (µs)", "variance", "min (µs)", "max (µs)"
+        field, "mean (µs)", "median (µs)", "variance (ns)", "min (µs)", "max (µs)"
     );
     println!(
         "|{:-^12}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|{:-^14}|",
@@ -17,7 +17,7 @@ pub fn print_bench_results(title: &str, results: &[(u32, BenchmarkComputations)]
             heads,
             c.mean.as_micros(),
             c.median.as_micros(),
-            c.variance.as_micros(),
+            c.variance.as_nanos(),
             c.min.as_micros(),
             c.max.as_micros(),
         );

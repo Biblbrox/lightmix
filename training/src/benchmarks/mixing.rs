@@ -13,7 +13,6 @@ pub struct BandedMixerBenchmark<B: Backend> {
     pub num_tokens: usize,
     pub batch_size: usize,
     pub num_heads: usize,
-    pub out_channels: usize,
     pub device: B::Device,
 }
 
@@ -28,15 +27,8 @@ impl<B: Backend> Benchmark for BandedMixerBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            BandedMixerConfig::new(
-                self.embed_dim,
-                self.num_tokens,
-                self.num_heads,
-                self.out_channels,
-                3,
-                0.01,
-            )
-            .init(&self.device),
+            BandedMixerConfig::new(self.embed_dim, self.num_tokens, self.num_heads, 3, 0.01)
+                .init(&self.device),
         )
     }
 
@@ -64,7 +56,6 @@ pub struct ButterflyPermutBenchmark<B: Backend> {
     pub num_tokens: usize,
     pub batch_size: usize,
     pub num_heads: usize,
-    pub out_channels: usize,
     pub device: B::Device,
 }
 
@@ -79,15 +70,8 @@ impl<B: Backend> Benchmark for ButterflyPermutBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            ButterflyMixerConfig::new(
-                self.embed_dim,
-                self.num_tokens,
-                self.num_heads,
-                self.out_channels,
-                1,
-                0,
-            )
-            .init(&self.device),
+            ButterflyMixerConfig::new(self.embed_dim, self.num_tokens, self.num_heads, 1, 0)
+                .init(&self.device),
         )
     }
 
@@ -115,7 +99,6 @@ pub struct LearnedPermutBenchmark<B: Backend> {
     pub num_tokens: usize,
     pub batch_size: usize,
     pub num_heads: usize,
-    pub out_channels: usize,
     pub device: B::Device,
 }
 
@@ -130,14 +113,8 @@ impl<B: Backend> Benchmark for LearnedPermutBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            LearnedPermuterConfig::new(
-                self.embed_dim,
-                self.num_tokens,
-                self.num_heads,
-                self.out_channels,
-                0.05,
-            )
-            .init(&self.device),
+            LearnedPermuterConfig::new(self.embed_dim, self.num_tokens, self.num_heads, 0.05)
+                .init(&self.device),
         )
     }
 
@@ -213,6 +190,7 @@ impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
 
 #[cfg(test)]
 mod tests {
+    use burn::prelude::Backend;
     use cubecl::{
         benchmark::{Benchmark, BenchmarkComputations},
         profile::TimingMethod,
@@ -220,7 +198,7 @@ mod tests {
 
     use crate::{
         benchmarks::{
-            CpuAutodiffBackend, CpuDevice, GpuAutodiffBackend, GpuDevice,
+            CpuAutodiffBackend, CpuBackend, GpuAutodiffBackend, GpuBackend,
             mixing::{
                 BandedMixerBenchmark, ButterflyPermutBenchmark, LearnedPermutBenchmark,
                 StaticPermuterBenchmark,
@@ -229,10 +207,8 @@ mod tests {
         utils::print_bench_results,
     };
 
-    #[test]
-    fn mixing_benchmark() {
-        let device = GpuDevice::default();
-        let cpu_device = CpuDevice::default();
+    fn mixing_benchmark_backend<B: Backend>(backend: &str) {
+        let device = B::Device::default();
 
         let batches = [64; 5];
         let embed_dim = [64, 128, 256, 512, 1024];
@@ -240,42 +216,37 @@ mod tests {
         let num_heads = [1, 2, 4, 8];
         let out_channels = [192, 128, 256, 512, 1024];
 
-        // GPU tests
-        let mut results_gpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_gpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_gpu_butterfly: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_gpu_banded: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_butterfly: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut results_banded: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for head in num_heads.into_iter() {
-            let bench_static = StaticPermuterBenchmark::<GpuAutodiffBackend> {
+            let bench_static = StaticPermuterBenchmark::<B> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
                 num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
                 device: device.clone(),
             };
-            let bench_learned = LearnedPermutBenchmark::<GpuAutodiffBackend> {
+            let bench_learned = LearnedPermutBenchmark::<B> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
                 num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
                 device: device.clone(),
             };
-            let bench_butterfly = ButterflyPermutBenchmark::<GpuAutodiffBackend> {
+            let bench_butterfly = ButterflyPermutBenchmark::<B> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
                 num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
                 device: device.clone(),
             };
-            let bench_banded = BandedMixerBenchmark::<GpuAutodiffBackend> {
+            let bench_banded = BandedMixerBenchmark::<B> {
                 batch_size: batches[0],
                 embed_dim: embed_dim[0],
                 num_heads: head,
                 num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
                 device: device.clone(),
             };
 
@@ -291,80 +262,39 @@ mod tests {
             let bench_res_banded = bench_banded.run(TimingMethod::Device).unwrap();
             let computed_banded = BenchmarkComputations::new(&bench_res_banded);
 
-            results_gpu_static.push((head as u32, computed_static));
-            results_gpu_learned.push((head as u32, computed_learned));
-            results_gpu_butterfly.push((head as u32, computed_butterfly));
-            results_gpu_banded.push((head as u32, computed_banded));
+            results_static.push((head as u32, computed_static));
+            results_learned.push((head as u32, computed_learned));
+            results_butterfly.push((head as u32, computed_butterfly));
+            results_banded.push((head as u32, computed_banded));
         }
 
-        // CPU tests
-        let mut results_cpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_cpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_cpu_butterfly: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_cpu_banded: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        for head in num_heads.into_iter() {
-            let bench_learned = LearnedPermutBenchmark::<CpuAutodiffBackend> {
-                embed_dim: embed_dim[0],
-                num_tokens: num_tokens[0],
-                batch_size: batches[0],
-                num_heads: head,
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-            let bench_static = StaticPermuterBenchmark::<CpuAutodiffBackend> {
-                embed_dim: embed_dim[0],
-                num_tokens: num_tokens[0],
-                batch_size: batches[0],
-                num_heads: head,
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-            let bench_butterfly = ButterflyPermutBenchmark::<CpuAutodiffBackend> {
-                embed_dim: embed_dim[0],
-                num_tokens: num_tokens[0],
-                batch_size: batches[0],
-                num_heads: head,
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-            let bench_banded = BandedMixerBenchmark::<CpuAutodiffBackend> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-
-            let bench_res_static = bench_static.run(TimingMethod::Device).unwrap();
-            let computed_static = BenchmarkComputations::new(&bench_res_static);
-
-            let bench_res_learned = bench_learned.run(TimingMethod::Device).unwrap();
-            let computed_learned = BenchmarkComputations::new(&bench_res_learned);
-
-            let bench_res_butterfly = bench_butterfly.run(TimingMethod::Device).unwrap();
-            let computed_butterfly = BenchmarkComputations::new(&bench_res_butterfly);
-
-            let bench_res_banded = bench_banded.run(TimingMethod::Device).unwrap();
-            let computed_banded = BenchmarkComputations::new(&bench_res_banded);
-
-            results_cpu_static.push((head as u32, computed_static));
-            results_cpu_learned.push((head as u32, computed_learned));
-            results_cpu_butterfly.push((head as u32, computed_butterfly));
-            results_cpu_banded.push((head as u32, computed_banded));
-        }
-
-        print_bench_results("StaticPermut (GPU)", &results_gpu_static, "num_heads");
-        print_bench_results("LearnedPermut (GPU)", &results_gpu_learned, "num_heads");
-        print_bench_results("ButterflyPermut (GPU)", &results_gpu_butterfly, "num_heads");
-        print_bench_results("BandedPermut (GPU)", &results_gpu_banded, "num_heads");
-        print_bench_results("StaticPermut (NdArray)", &results_cpu_static, "num_heads");
-        print_bench_results("LearnedPermut (NdArray)", &results_cpu_learned, "num_heads");
         print_bench_results(
-            "ButterflyPermut (NdArray)",
-            &results_cpu_butterfly,
+            format!("StaticPermut ({})", backend).as_str(),
+            &results_static,
             "num_heads",
         );
-        print_bench_results("BandedPermut (NdArray)", &results_cpu_banded, "num_heads");
+        print_bench_results(
+            format!("LearnedPermut ({})", backend).as_str(),
+            &results_learned,
+            "num_heads",
+        );
+        print_bench_results(
+            format!("ButterflyPermut ({})", backend).as_str(),
+            &results_butterfly,
+            "num_heads",
+        );
+        print_bench_results(
+            format!("BandedPermut ({})", backend).as_str(),
+            &results_banded,
+            "num_heads",
+        );
+    }
+
+    #[test]
+    fn mixing_benchmark() {
+        mixing_benchmark_backend::<GpuBackend>("Cuda");
+        mixing_benchmark_backend::<CpuBackend>("NdArray");
+        mixing_benchmark_backend::<GpuAutodiffBackend>("Cuda (Autodiff)");
+        mixing_benchmark_backend::<CpuAutodiffBackend>("NdArray (Autodiff)");
     }
 }

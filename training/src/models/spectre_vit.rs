@@ -41,8 +41,8 @@ pub struct SpectreLinearConfig {
 pub struct SpectreEncoderLayer<B: Backend> {
     linear1: Linear<B>,
     linear2: Linear<B>,
-    //mix_layer: LearnedPermuter<B>,
-    mix_layer: BandedMixer<B>,
+    mix_layer: LearnedPermuter<B>,
+    //mix_layer: BandedMixer<B>,
     //mix_layer: StaticPermuter<B>,
     //mix_layer: WeightedPermuter<B>,
     //mix_layer: ButterflyMixer<B>,
@@ -150,15 +150,13 @@ impl SpectreEncoderLayerConfig {
         SpectreEncoderLayer {
             linear1: LinearConfig::new(self.embed_dim, self.hidden_dim).init(device),
             linear2: LinearConfig::new(self.hidden_dim, self.embed_dim).init(device),
-            //mix_layer: LearnedPermuterConfig::new(
-            //    self.embed_dim,
-            //    self.seq_length,
-            //    self.num_heads,
-            //    self.embed_dim,
-            //    self.num_encoders,
-            //    self.sinkhorn_temp,
-            //)
-            //.init(device),
+            mix_layer: LearnedPermuterConfig::new(
+                self.embed_dim,
+                self.seq_length,
+                self.num_heads,
+                self.sinkhorn_temp,
+            )
+            .init(device),
             //mix_layer: ButterflyMixerConfig::new(
             //    self.embed_dim,
             //    self.seq_length,
@@ -185,15 +183,15 @@ impl SpectreEncoderLayerConfig {
             //    self.encoder,
             //)
             //.init(device),
-            mix_layer: BandedMixerConfig::new(
-                self.embed_dim,
-                self.seq_length,
-                self.num_heads,
-                self.embed_dim,
-                3,
-                self.sinkhorn_temp,
-            )
-            .init(device),
+            //mix_layer: BandedMixerConfig::new(
+            //    self.embed_dim,
+            //    self.seq_length,
+            //    self.num_heads,
+            //    self.embed_dim,
+            //    3,
+            //    self.sinkhorn_temp,
+            //)
+            //.init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
@@ -346,9 +344,15 @@ mod tests {
             &device,
         );
 
-        let model =
-            SpectrePatchEmbeddingConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE, IMG_SIZE, DROPOUT)
-                .init(&device);
+        let model = SpectrePatchEmbeddingConfig::new(
+            IN_CHANNELS,
+            EMBED_DIM,
+            PATCH_SIZE,
+            IMG_SIZE,
+            DROPOUT,
+            NUM_PATCHES,
+        )
+        .init(&device);
         let vit_input = model.forward(test_image);
         assert_eq!(
             vit_input.shape(),
