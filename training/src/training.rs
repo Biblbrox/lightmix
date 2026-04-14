@@ -38,19 +38,20 @@ use crate::{
     config::Config,
     data::{
         batch::{
-            Batch, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher,
-            food101::Food101Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
-            tinyimagenet::TinyImageNetBatcher,
+            Batch, cifar10::Cifar10Batcher, cifar100::Cifar100Batcher,
+            fashionmnist::FashionMnistBatcher, food101::Food101Batcher,
+            imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher, tinyimagenet::TinyImageNetBatcher,
         },
         builder::StreamingDataLoaderBuilder,
         dataset::{
-            LazyDataset, LazyFiletype, cifar100::Cifar100Dataset,
+            LazyDataset, LazyFiletype, cifar10::Cifar10Dataset, cifar100::Cifar100Dataset,
             fashionmnist::FashionMnistDataset, food101::Food101Dataset,
             imagenet1k::ImageNet1kDataset, mnist::MnistDataset, tinyimagenet::TinyImageNetDataset,
         },
         mapper::{
-            cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper, food101::Food101Mapper,
-            imagenet1k::ImageNet1kMapper, mnist::MnistMapper, tinyimagenet::TinyImageNetMapper,
+            cifar10::Cifar10Mapper, cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper,
+            food101::Food101Mapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper,
+            tinyimagenet::TinyImageNetMapper,
         },
         strategy::buffered::BufferedBatchStrategy,
     },
@@ -72,6 +73,10 @@ type Mapper = FashionMnistMapper;
 //type Dataset = Cifar100Dataset;
 //type Batcher = Cifar100Batcher;
 //type Mapper = Cifar100Mapper;
+
+//type Dataset = Cifar10Dataset;
+//type Batcher = Cifar10Batcher;
+//type Mapper = Cifar10Mapper;
 
 //type Dataset = ImageNet1kDataset;
 //type Batcher = ImageNet1kBatcher;

@@ -1,21 +1,63 @@
-from PIL.Image import Resampling
 import argparse
-from os import mkdir
 import io
+from os import mkdir
 from os.path import exists, isfile
 from pathlib import Path
 
 import polars as pl
 from PIL import Image
+from PIL.Image import Resampling
 
 DATASET_SPECS = {
-    "imagenet1k":   {"labelcol": "label", "imagecol":  "image",     "size": (256, 256), "crop": (16, 16, 240, 240), "channels": 3},
-    "tinyimagenet": {"labelcol": "label", "imagecol":  "image",      "size": (64, 64), "crop": None, "channels": 3}, # Broken
-    "cifar100":     {"labelcol": "fine_label", "imagecol":  "img",      "size": None, "crop": None, "channels": 3},
-    "cifar10":      {"labelcol": "fine_label", "imagecol":  "img",      "size": None, "crop": None, "channels": 3},
-    "mnist":        {"labelcol": "label", "imagecol":  "image",      "size": None, "crop": None, "channels": 1},
-    "fashionmnist": {"labelcol": "label", "imagecol":  "image",      "size": None, "crop": None, "channels": 1},
-    "food101":      {"labelcol": "label", "imagecol":  "image",      "size": (96, 96), "crop": None, "channels": 3},
+    "imagenet1k": {
+        "labelcol": "label",
+        "imagecol": "image",
+        "size": (256, 256),
+        "crop": (16, 16, 240, 240),
+        "channels": 3,
+    },
+    "tinyimagenet": {
+        "labelcol": "label",
+        "imagecol": "image",
+        "size": (64, 64),
+        "crop": None,
+        "channels": 3,
+    },  # Broken
+    "cifar100": {
+        "labelcol": "fine_label",
+        "imagecol": "img",
+        "size": None,
+        "crop": None,
+        "channels": 3,
+    },
+    "cifar10": {
+        "labelcol": "label",
+        "imagecol": "img",
+        "size": None,
+        "crop": None,
+        "channels": 3,
+    },
+    "mnist": {
+        "labelcol": "label",
+        "imagecol": "image",
+        "size": None,
+        "crop": None,
+        "channels": 1,
+    },
+    "fashionmnist": {
+        "labelcol": "label",
+        "imagecol": "image",
+        "size": None,
+        "crop": None,
+        "channels": 1,
+    },
+    "food101": {
+        "labelcol": "label",
+        "imagecol": "image",
+        "size": (96, 96),
+        "crop": None,
+        "channels": 3,
+    },
 }
 
 
@@ -44,7 +86,7 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
     batch_size = 2048
     arrow_path = out_path.joinpath(f"{parquet_path.stem}.arrow")
 
-    image_col = DATASET_SPECS[dataset]["imagecol"]
+    image_col: str = DATASET_SPECS[dataset]["imagecol"]
     df = pl.scan_parquet(parquet_path)
     try:
         schema = df.collect_schema()
@@ -61,12 +103,11 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
         )
     )
 
-    df = df.with_columns(pl.col(["image", DATASET_SPECS[dataset]["labelcol"]]).shuffle(seed=42))
+    df = df.with_columns(
+        pl.col(["image", DATASET_SPECS[dataset]["labelcol"]]).shuffle(seed=42)
+    )
 
-    df.sink_ipc(
-        arrow_path,
-        record_batch_size=batch_size
-    )  # , compression="lz4")
+    df.sink_ipc(arrow_path, record_batch_size=batch_size)  # , compression="lz4")
 
 
 def convert(in_path: Path, out_path: Path, dataset):

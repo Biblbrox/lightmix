@@ -51,7 +51,6 @@ embed_dim = 512
 continue_training = false
 resume_epoch = 1
 
-
 [food101]
 num_classes = 101
 img_size = 96
@@ -75,8 +74,6 @@ embed_dim = 512
 continue_training = false
 resume_epoch = 1
 
-
-
 [cifar100]
 num_classes = 100
 img_size = 32
@@ -85,6 +82,29 @@ std = [0.2675, 0.2565, 0.2761]
 mean = [0.5071, 0.4867, 0.4408]
 
 [cifar100.spectre_vit]
+batch_size = 8
+val_batch_size = 512
+epochs = 20
+patch_size = 4
+num_heads = 8
+dropout = 0.001
+hidden_dim = 768
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 4
+embed_dim = 512
+continue_training = false
+resume_epoch = 1
+
+[cifar10]
+num_classes = 10
+img_size = 32
+in_channels = 3
+mean = [0.4914, 0.4822, 0.4465]
+std = [0.2470, 0.2435, 0.2616]
+
+[cifar10.spectre_vit]
 batch_size = 8
 val_batch_size = 512
 epochs = 20
@@ -122,7 +142,6 @@ num_encoders = 4
 embed_dim = 16
 continue_training = false
 resume_epoch = 1
-
 
 [fashionmnist]
 img_size = 28

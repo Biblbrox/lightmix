@@ -1,7 +1,8 @@
 use burn::{
     module::{Module, Param},
     nn::{
-        Dropout, DropoutConfig, Linear, LinearConfig, conv::{Conv2d, Conv2dConfig}
+        Dropout, DropoutConfig, Linear, LinearConfig,
+        conv::{Conv2d, Conv2dConfig},
     },
     prelude::*,
     tensor::Distribution,
@@ -33,7 +34,8 @@ pub struct SpectrePatchEmbeddingConfig {
     embed_dim: usize,
     patch_size: usize,
     image_size: usize,
-    dropout: f64
+    dropout: f64,
+    seq_length: usize,
 }
 
 impl<B: Backend> SpectrePatcher<B> {
@@ -78,7 +80,6 @@ impl<B: Backend> SpectrePatchEmbedding<B> {
 impl SpectrePatchEmbeddingConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectrePatchEmbedding<B> {
         let distribution = Distribution::Normal(0.0, 1.0);
-        let num_patches = (self.image_size / self.patch_size).pow(2);
         SpectrePatchEmbedding {
             patcher: SpectrePatcherConfig::new(self.in_channels, self.embed_dim, self.patch_size)
                 .init(device),
@@ -89,7 +90,7 @@ impl SpectrePatchEmbeddingConfig {
             ))
             .set_require_grad(true),
             position_embeddings: Param::<Tensor<B, 3>>::from_tensor(Tensor::<B, 3>::random(
-                Shape::new([1, num_patches + 1, self.embed_dim]),
+                Shape::new([1, self.seq_length, self.embed_dim]),
                 distribution,
                 device,
             ))

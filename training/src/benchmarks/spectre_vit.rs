@@ -1,10 +1,15 @@
-use burn::{Tensor, nn::{Linear, LinearConfig}, prelude::Backend, tensor::Distribution};
-use cubecl::{benchmark::Benchmark};
+use burn::{
+    Tensor,
+    nn::{Linear, LinearConfig},
+    prelude::Backend,
+    tensor::Distribution,
+};
+use cubecl::benchmark::Benchmark;
 
-use crate::{mixing::{learnedmixer::{LearnedPermuter, LearnedPermuterConfig}, randommixer::{PermutationStrategy, StaticPermuter, StaticPermuterConfig}}, spectre_vit::{
-    SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig, embeddings::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig}
-}};
-
+use crate::{
+    models::spectre_vit::{SpectreLinear, SpectreLinearConfig, SpectreViT, SpectreViTConfig},
+    tokenization::spectre_vit::{SpectrePatchEmbedding, SpectrePatchEmbeddingConfig},
+};
 
 pub struct SpectreLinearBenchmark<B: Backend> {
     pub batch_size: usize,
@@ -21,19 +26,11 @@ impl<B: Backend> Benchmark for SpectreLinearBenchmark<B> {
     fn prepare(&self) -> Self::Input {
         (
             Tensor::<B, 3>::random(
-                [
-                    self.batch_size,
-                    self.num_tokens,
-                    self.in_channels,
-                ],
+                [self.batch_size, self.num_tokens, self.in_channels],
                 Distribution::Default,
                 &self.device,
             ),
-            SpectreLinearConfig::new(
-                self.in_channels,
-                self.out_channels
-            )
-            .init(&self.device),
+            SpectreLinearConfig::new(self.in_channels, self.out_channels).init(&self.device),
         )
     }
 
@@ -56,7 +53,6 @@ impl<B: Backend> Benchmark for SpectreLinearBenchmark<B> {
     }
 }
 
-
 pub struct LinearBenchmark<B: Backend> {
     pub batch_size: usize,
     pub num_tokens: usize,
@@ -72,19 +68,11 @@ impl<B: Backend> Benchmark for LinearBenchmark<B> {
     fn prepare(&self) -> Self::Input {
         (
             Tensor::<B, 3>::random(
-                [
-                    self.batch_size,
-                    self.num_tokens,
-                    self.in_channels,
-                ],
+                [self.batch_size, self.num_tokens, self.in_channels],
                 Distribution::Default,
                 &self.device,
             ),
-            LinearConfig::new(
-                self.in_channels,
-                self.out_channels
-            )
-            .init(&self.device),
+            LinearConfig::new(self.in_channels, self.out_channels).init(&self.device),
         )
     }
 
@@ -106,8 +94,6 @@ impl<B: Backend> Benchmark for LinearBenchmark<B> {
         Ok(res)
     }
 }
-
-
 
 pub struct SpectreViTBenchmark<B: Backend> {
     pub num_patches: usize,
@@ -150,7 +136,7 @@ impl<B: Backend> Benchmark for SpectreViTBenchmark<B> {
                 self.image_size,
                 self.hid_dim,
                 self.dropout,
-                0.05
+                0.05,
             )
             .init(&self.device),
         )
@@ -181,6 +167,7 @@ pub struct SpectrePatchEmbeddingBenchmark<B: Backend> {
     pub embed_dim: usize,
     pub patch_size: usize,
     pub image_size: usize,
+    pub seq_length: usize,
     pub device: B::Device,
 }
 
@@ -206,6 +193,7 @@ impl<B: Backend> Benchmark for SpectrePatchEmbeddingBenchmark<B> {
                 self.patch_size,
                 self.image_size,
                 0.01,
+                self.seq_length,
             )
             .init(&self.device),
         )
@@ -230,109 +218,6 @@ impl<B: Backend> Benchmark for SpectrePatchEmbeddingBenchmark<B> {
     }
 }
 
-pub struct LearnedPermutBenchmark<B: Backend> {
-    pub embed_dim: usize,
-    pub num_tokens: usize,
-    pub batch_size: usize,
-    pub num_heads: usize,
-    pub out_channels: usize,
-    pub device: B::Device,
-}
-
-impl<B: Backend> Benchmark for LearnedPermutBenchmark<B> {
-    type Input = (Tensor<B, 3>, LearnedPermuter<B>);
-    type Output = Tensor<B, 3>;
-
-    fn prepare(&self) -> Self::Input {
-        (
-            Tensor::<B, 3>::random(
-                [self.batch_size, self.num_tokens, self.embed_dim],
-                Distribution::Default,
-                &self.device,
-            ),
-            LearnedPermuterConfig::new(
-                self.embed_dim,
-                self.num_tokens,
-                self.num_heads,
-                self.out_channels,
-                1,
-                1,
-                0.05
-            )
-            .init(&self.device),
-        )
-    }
-
-    fn name(&self) -> String {
-        format!(
-            "MHPermutMix-{:?}x{:?}x{:?} {:?} heads",
-            self.batch_size, self.num_tokens, self.embed_dim, self.num_heads
-        )
-        .to_lowercase()
-    }
-
-    fn sync(&self) {
-        B::sync(&self.device).unwrap();
-    }
-
-    fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
-        let (tensor, mh_permut) = input;
-        let res = mh_permut.forward(tensor);
-        Ok(res)
-    }
-}
-
-pub struct StaticPermuterBenchmark<B: Backend> {
-    pub embed_dim: usize,
-    pub num_tokens: usize,
-    pub batch_size: usize,
-    pub num_heads: usize,
-    pub out_channels: usize,
-    pub device: B::Device,
-}
-
-impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
-    type Input = (Tensor<B, 3>, StaticPermuter<B>);
-    type Output = Tensor<B, 3>;
-
-    fn prepare(&self) -> Self::Input {
-        (
-            Tensor::<B, 3>::random(
-                [self.batch_size, self.num_tokens, self.embed_dim],
-                Distribution::Default,
-                &self.device,
-            ),
-            StaticPermuterConfig::new(
-                self.embed_dim,
-                self.num_tokens,
-                self.num_heads,
-                self.out_channels,
-                1,
-                PermutationStrategy::Random,
-            )
-            .init(&self.device),
-        )
-    }
-
-    fn name(&self) -> String {
-        format!(
-            "MHPermutMixMatrix-{:?}x{:?}x{:?} {:?} heads",
-            self.batch_size, self.num_tokens, self.embed_dim, self.num_heads
-        )
-        .to_lowercase()
-    }
-
-    fn sync(&self) {
-        B::sync(&self.device).unwrap();
-    }
-
-    fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
-        let (tensor, mh_permut) = input;
-        let res = mh_permut.forward(tensor);
-        Ok(res)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use burn::backend::Autodiff;
@@ -342,8 +227,9 @@ mod tests {
     };
 
     use crate::{
-        spectre_vit::benchmark::{
-            LearnedPermutBenchmark, LinearBenchmark, SpectreLinearBenchmark, SpectrePatchEmbeddingBenchmark, SpectreViTBenchmark, StaticPermuterBenchmark
+        benchmarks::spectre_vit::{
+            LinearBenchmark, SpectreLinearBenchmark, SpectrePatchEmbeddingBenchmark,
+            SpectreViTBenchmark,
         },
         utils::print_bench_results,
     };
@@ -360,6 +246,7 @@ mod tests {
         let in_channels = 3;
 
         let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let num_patches = (image_size / patch_size).pow(2);
         for embed in embed_dim.into_iter() {
             let bench = SpectrePatchEmbeddingBenchmark::<B> {
                 batch_size: batches[0],
@@ -367,6 +254,7 @@ mod tests {
                 embed_dim: embed,
                 patch_size,
                 image_size,
+                seq_length: num_patches,
                 device: device.clone(),
             };
 
@@ -376,93 +264,6 @@ mod tests {
         }
 
         print_bench_results("SpectrePatcher", &results, "embed_dim");
-    }
-
-    #[test]
-    fn learned_permut_bench() {
-        type B = burn::backend::cuda::Cuda;
-        type MyAutodiffBackend = Autodiff<B>;
-
-        type CpuB = burn::backend::ndarray::NdArray;
-        type CpuAutodiffBackend = Autodiff<CpuB>;
-
-        let device = burn::backend::cuda::CudaDevice::default();
-        let cpu_device = burn::backend::ndarray::NdArrayDevice::default();
-
-        let batches = [64; 5];
-        let embed_dim = [64, 128, 256, 512, 1024];
-        let num_tokens = [64; 5];
-        let num_heads = [1, 2, 3, 4, 6, 8];
-        let out_channels = [192, 128, 256, 512, 1024];
-
-        // GPU tests
-        let mut results_gpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_gpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        for head in num_heads.into_iter() {
-            let bench_static = StaticPermuterBenchmark::<MyAutodiffBackend> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: device.clone(),
-            };
-            let bench_learned = LearnedPermutBenchmark::<MyAutodiffBackend> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: device.clone(),
-            };
-
-            let bench_res_static = bench_static.run(TimingMethod::Device).unwrap();
-            let computed_static = BenchmarkComputations::new(&bench_res_static);
-
-            let bench_res_learned = bench_learned.run(TimingMethod::Device).unwrap();
-            let computed_learned= BenchmarkComputations::new(&bench_res_learned);
-            results_gpu_static.push((head as u32, computed_static));
-            results_gpu_learned.push((head as u32, computed_learned));
-        }
-
-        // CPU tests
-        let mut results_cpu_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let mut results_cpu_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        for head in num_heads.into_iter() {
-            let bench_learned = LearnedPermutBenchmark::<CpuAutodiffBackend> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-            let bench_static = StaticPermuterBenchmark::<CpuAutodiffBackend> {
-                batch_size: batches[0],
-                embed_dim: embed_dim[0],
-                num_heads: head,
-                num_tokens: num_tokens[0],
-                out_channels: out_channels[0],
-                device: cpu_device,
-            };
-
-            let bench_res_static = bench_static.run(TimingMethod::Device).unwrap();
-            let computed_static = BenchmarkComputations::new(&bench_res_static);
-
-            let bench_res_learned = bench_learned.run(TimingMethod::Device).unwrap();
-            let computed_learned = BenchmarkComputations::new(&bench_res_learned);
-            results_cpu_static.push((head as u32, computed_static));
-            results_cpu_learned.push((head as u32, computed_learned));
-        }
-
-        print_bench_results("StaticPermut (GPU)", &results_gpu_static, "num_heads");
-        print_bench_results("LearnedPermut (GPU)", &results_gpu_learned, "num_heads");
-        print_bench_results("StaticPermut (NdArray)", &results_cpu_static, "num_heads");
-        print_bench_results(
-            "LearnedPermut (NdArray)",
-            &results_cpu_learned,
-            "num_heads",
-        );
     }
 
     #[test]
@@ -588,11 +389,11 @@ mod tests {
 
         print_bench_results("SpectreLinear (GPU)", &results_spectre_gpu, "out_channels");
         print_bench_results("Linear (GPU)", &results_gpu, "out_channels");
-        print_bench_results("SpectreLinear (NdArray)", &results_spectre_cpu, "out_channels");
         print_bench_results(
-            "Linear (NdArray)",
-            &results_cpu,
+            "SpectreLinear (NdArray)",
+            &results_spectre_cpu,
             "out_channels",
         );
+        print_bench_results("Linear (NdArray)", &results_cpu, "out_channels");
     }
 }

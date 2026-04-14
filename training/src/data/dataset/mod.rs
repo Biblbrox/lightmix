@@ -1,9 +1,10 @@
+pub mod cifar10;
 pub mod cifar100;
+pub mod fashionmnist;
+pub mod food101;
 pub mod imagenet1k;
 pub mod mnist;
-pub mod fashionmnist;
 pub mod tinyimagenet;
-pub mod food101;
 
 use polars::prelude::*;
 
@@ -68,7 +69,7 @@ mod tests {
 
         let ds = ImageNet1kDataset::new(imagenet1k_path, crate::data::dataset::LazyFiletype::Arrow);
 
-        let std =vec![0.229, 0.224, 0.225];
+        let std = vec![0.229, 0.224, 0.225];
         let mean = vec![0.485, 0.456, 0.406];
 
         let normalize = Box::new(Normalize::<B>::new(std, mean, &device));

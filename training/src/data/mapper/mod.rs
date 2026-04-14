@@ -1,9 +1,10 @@
+pub mod cifar10;
 pub mod cifar100;
+pub mod fashionmnist;
+pub mod food101;
 pub mod imagenet1k;
 pub mod mnist;
-pub mod fashionmnist;
 pub mod tinyimagenet;
-pub mod food101;
 
 use polars::prelude::*;
 

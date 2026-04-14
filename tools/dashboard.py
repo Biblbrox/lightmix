@@ -1,18 +1,18 @@
-import io
 import argparse
-import polars as pl
-from os.path import join, basename, dirname
 import glob
-from dash import Dash, html, dcc, callback, Output, Input
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import dash_bootstrap_components as dbc
-from dash import clientside_callback
+import io
 import re
+from os.path import basename, dirname, join
+
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
+import polars as pl
+from dash import Dash, Input, Output, callback, clientside_callback, dcc, html
+from plotly.subplots import make_subplots
 
 
 def parse_logs(root_dir):
-    epoch_regex = re.compile(r'epoch-(\d+)')
+    epoch_regex = re.compile(r"epoch-(\d+)")
     rows = []
 
     for file_path in glob.glob(join(root_dir, "*", "**/*.log"), recursive=True):
@@ -27,15 +27,24 @@ def parse_logs(root_dir):
         epoch = int(match.group(1))
         metric = basename(file_path).replace(".log", "")
 
-        val = pl.read_csv(file_path, has_header=False).get_column("column_1").mean()
-
-        rows.append({
-            "experiment": exp,
-            "split": split,
-            "metric": metric,
-            "epoch": epoch,
-            "value": val,
-        })
+        frame = pl.read_csv(
+            file_path,
+            has_header=False,
+            use_pyarrow=True,
+            # schema_overrides=[pl.Float64, pl.Int32],
+        ).get_column("column_1")
+        val = frame.mean()
+        std = frame.std()
+        rows.append(
+            {
+                "experiment": exp,
+                "split": split,
+                "metric": metric,
+                "epoch": epoch,
+                "value": val,
+                "err": std,
+            }
+        )
 
     return pl.DataFrame(rows).sort(["experiment", "metric", "epoch"])
 
@@ -48,11 +57,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     df = parse_logs(args.d)
-    experiments = df["experiment"].unique().to_list()
+    experiments = df["experiment"].unique().to_list().sort()
     app = Dash(external_stylesheets=[dbc.themes.DARKLY])
     PALETTE = [
-        "#636EFA", "#EF553B", "#00CC96", "#AB63FA",
-        "#FFA15A", "#19D3F3", "#FF6692", "#B6E880",
+        "#636EFA",
+        "#EF553B",
+        "#00CC96",
+        "#AB63FA",
+        "#FFA15A",
+        "#19D3F3",
+        "#FF6692",
+        "#B6E880",
     ]
 
     clientside_callback(
@@ -60,49 +75,74 @@ if __name__ == "__main__":
             const link = document.querySelector('link[rel=stylesheet]');
             link.href = dark ? '%s' : '%s';
             return null;
-        }""" % (dbc.themes.DARKLY, dbc.themes.FLATLY),
+        }"""
+        % (dbc.themes.DARKLY, dbc.themes.FLATLY),
         Output("theme-store", "data"),
         Input("theme-switch", "value"),
     )
 
-    app.layout = dbc.Container([
-        dcc.Interval(id="poll", interval=5_000, n_intervals=0),
-        dcc.Store(id="df-store"),
-        dcc.Store(id="theme-store"),
-
-        dbc.Row(dbc.Col([
-            html.H2("Experiment Dashboard", className="d-inline me-3"),
-            dbc.Switch(id="theme-switch", label="Dark", value=True, className="d-inline-flex")
-        ]), class_name="align-items-center py-2 border-bottom mb-3"),
-
-        dbc.Row([
-            dbc.Col([
-            html.H4("Experiments", className="mb-3"),
-            dbc.Checklist(
-                id="experiment-selector",
-                options=[
-                    {
-                        "label": html.Span([
-                            html.Span(style={
-                                "width": "10px", "height": "10px",
-                                "borderRadius": "50%", "display": "inline-block",
-                                "marginRight": "8px",
-                                "backgroundColor": PALETTE[i % len(PALETTE)],
-                            }),
-                            name,
-                        ]),
-                        "value": name,
-                    }
-                    for i, name in enumerate(df["experiment"].unique())
-                ],
-                value=[df["experiment"][0]],
-                input_class_name="btn-check",
-                label_class_name="btn btn-outline-secondary w-100 text-start mb-1",
+    app.layout = dbc.Container(
+        [
+            dcc.Interval(id="poll", interval=5_000, n_intervals=0),
+            dcc.Store(id="df-store"),
+            dcc.Store(id="theme-store"),
+            dbc.Row(
+                dbc.Col(
+                    [
+                        html.H2("Experiment Dashboard", className="d-inline me-3"),
+                        dbc.Switch(
+                            id="theme-switch",
+                            label="Dark",
+                            value=True,
+                            className="d-inline-flex",
+                        ),
+                    ]
+                ),
+                class_name="align-items-center py-2 border-bottom mb-3",
             ),
-        ], width=2),
-            dbc.Col(html.Div(id="plots-container"), width=10),
-        ]),
-    ], fluid=True)
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.H4("Experiments", className="mb-3"),
+                            dbc.Checklist(
+                                id="experiment-selector",
+                                options=[
+                                    {
+                                        "label": html.Span(
+                                            [
+                                                html.Span(
+                                                    style={
+                                                        "width": "10px",
+                                                        "height": "10px",
+                                                        "borderRadius": "50%",
+                                                        "display": "inline-block",
+                                                        "marginRight": "8px",
+                                                        "backgroundColor": PALETTE[
+                                                            i % len(PALETTE)
+                                                        ],
+                                                    }
+                                                ),
+                                                name,
+                                            ]
+                                        ),
+                                        "value": name,
+                                    }
+                                    for i, name in enumerate(df["experiment"].unique())
+                                ],
+                                value=[df["experiment"][0]],
+                                input_class_name="btn-check",
+                                label_class_name="btn btn-outline-secondary w-100 text-start mb-1",
+                            ),
+                        ],
+                        width=2,
+                    ),
+                    dbc.Col(html.Div(id="plots-container"), width=10),
+                ]
+            ),
+        ],
+        fluid=True,
+    )
 
     @callback(
         Output("df-store", "data"),
@@ -111,18 +151,24 @@ if __name__ == "__main__":
     )
     def refresh_store(n):
         fresh = parse_logs(args.d)
-        exps  = fresh["experiment"].unique().to_list()
+        exps = fresh["experiment"].unique().to_list()
         return fresh.write_json(), [
             {
-                "label": html.Span([
-                    html.Span(style={
-                        "width": "10px", "height": "10px",
-                        "borderRadius": "50%", "display": "inline-block",
-                        "marginRight": "8px",
-                        "backgroundColor": PALETTE[i % len(PALETTE)],
-                    }),
-                    name,
-                ]),
+                "label": html.Span(
+                    [
+                        html.Span(
+                            style={
+                                "width": "10px",
+                                "height": "10px",
+                                "borderRadius": "50%",
+                                "display": "inline-block",
+                                "marginRight": "8px",
+                                "backgroundColor": PALETTE[i % len(PALETTE)],
+                            }
+                        ),
+                        name,
+                    ]
+                ),
                 "value": name,
             }
             for i, name in enumerate(exps)
@@ -153,23 +199,34 @@ if __name__ == "__main__":
                     exp_df = split_df.filter(pl.col("experiment") == exp)
                     if exp_df.is_empty():
                         continue
-                    fig.add_trace(go.Scatter(
-                        x=exp_df["epoch"].to_list(),
-                        y=exp_df["value"].to_list(),
-                        name=exp,
-                        line=dict(color=exp_color[exp]),
-                        legendgroup=exp,
-                        showlegend=(col == 1),
-                    ), col=col, row=1)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=exp_df["epoch"].to_list(),
+                            y=exp_df["value"].to_list(),
+                            error_y=dict(
+                                type="data", array=exp_df["err"].to_list(), visible=True
+                            ),
+                            name=exp,
+                            line=dict(color=exp_color[exp]),
+                            legendgroup=exp,
+                            showlegend=(col == 1),
+                        ),
+                        col=col,
+                        row=1,
+                    )
 
             fig.update_layout(template=template)
-            cards.append(dbc.Card([
-                dbc.CardHeader(html.H3(metric, className="mb-0")),
-                dbc.CardBody(dcc.Graph(figure=fig)),
-            ], className="mb-4"))
+            cards.append(
+                dbc.Card(
+                    [
+                        dbc.CardHeader(html.H3(metric, className="mb-0")),
+                        dbc.CardBody(dcc.Graph(figure=fig)),
+                    ],
+                    className="mb-4",
+                )
+            )
 
         return cards
 
     # app.run(debug=True)
     app.run(debug=False, dev_tools_ui=False)
-

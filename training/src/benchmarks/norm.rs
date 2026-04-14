@@ -107,7 +107,7 @@ mod tests {
     };
 
     use crate::{
-        norm::benchmark::{DerfBenchmark, LayerNormBenchmark},
+        benchmarks::norm::{DerfBenchmark, LayerNormBenchmark},
         utils::print_bench_results,
     };
 

@@ -1,4 +1,5 @@
 pub mod cifar100;
+pub mod cifar10;
 pub mod imagenet1k;
 pub mod mnist;
 pub mod fashionmnist;

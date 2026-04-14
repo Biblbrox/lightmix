@@ -1,8 +1,11 @@
 #![recursion_limit = "2048"]
 
 mod augmentations;
+mod benchmarks;
+mod compression;
 mod config;
 mod data;
+mod kernels;
 mod mixing;
 mod models;
 mod norm;
@@ -10,7 +13,7 @@ mod tokenization;
 mod training;
 mod utils;
 
-use std::{collections::HashMap, env::current_dir, fs::File, path::PathBuf};
+use std::{env::current_dir, fs::File, path::PathBuf};
 
 use crate::{config::Config, models::spectre_vit::SpectreViTConfig as ModelConfig};
 use burn::{
@@ -70,13 +73,14 @@ fn main() {
 
     // let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = format!(
-        "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}-weightedpermut",
+        "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}-temp-{}-learnedmixer",
         model_name,
         dataset,
         config.num_heads,
         config.hidden_dim,
         config.embed_dim,
-        config.num_encoders
+        config.num_encoders,
+        config.sinkhorn_temp,
     );
     crate::training::train::<MyAutodiffBackend>(
         &artifact_dir,

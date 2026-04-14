@@ -7,11 +7,14 @@ use burn::{
         pool::{AdaptiveAvgPool1d, AdaptiveAvgPool1dConfig},
     },
     prelude::Backend,
-    tensor::module::adaptive_avg_pool1d,
+    tensor::{module::adaptive_avg_pool1d, s},
 };
 
 use crate::{
+    compression::{SpectralCompressConfig, SpectralCompressor, transform::SpectralTransform},
     mixing::{
+        bandedmixer::{BandedMixer, BandedMixerConfig},
+        butterflymixer::{ButterflyMixer, ButterflyMixerConfig},
         learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
         randommixer::{PermutationStrategy, StaticPermuter, StaticPermuterConfig},
         weightedmixer::{WeightedPermuter, WeightedPermuterConfig},
@@ -39,8 +42,10 @@ pub struct SpectreEncoderLayer<B: Backend> {
     linear1: Linear<B>,
     linear2: Linear<B>,
     //mix_layer: LearnedPermuter<B>,
+    mix_layer: BandedMixer<B>,
     //mix_layer: StaticPermuter<B>,
-    mix_layer: WeightedPermuter<B>,
+    //mix_layer: WeightedPermuter<B>,
+    //mix_layer: ButterflyMixer<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
 
@@ -85,6 +90,7 @@ pub struct SpectreViT<B: Backend> {
     encoder: SpectreEncoder<B>,
     layer_norm: DynamicERF<B>,
     linear: Linear<B>,
+    compressor: SpectralCompressor<B>,
 }
 
 #[derive(Config, Debug)]
@@ -150,9 +156,18 @@ impl SpectreEncoderLayerConfig {
             //    self.num_heads,
             //    self.embed_dim,
             //    self.num_encoders,
+            //    self.sinkhorn_temp,
+            //)
+            //.init(device),
+            //mix_layer: ButterflyMixerConfig::new(
+            //    self.embed_dim,
+            //    self.seq_length,
+            //    self.num_heads,
+            //    self.embed_dim,
+            //    self.num_encoders,
             //    self.encoder,
-            //    self.sinkhorn_temp
-            //).init(device),
+            //)
+            //.init(device),
             //mix_layer: StaticPermuterConfig::new(
             //    self.embed_dim,
             //    self.seq_length,
@@ -161,13 +176,22 @@ impl SpectreEncoderLayerConfig {
             //    self.num_encoders,
             //    PermutationStrategy::Random
             //).init(device),
-            mix_layer: WeightedPermuterConfig::new(
+            //mix_layer: WeightedPermuterConfig::new(
+            //    self.embed_dim,
+            //    self.seq_length,
+            //    self.num_heads,
+            //    self.embed_dim,
+            //    self.num_encoders,
+            //    self.encoder,
+            //)
+            //.init(device),
+            mix_layer: BandedMixerConfig::new(
                 self.embed_dim,
                 self.seq_length,
                 self.num_heads,
                 self.embed_dim,
-                self.num_encoders,
-                self.encoder,
+                3,
+                self.sinkhorn_temp,
             )
             .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
@@ -222,6 +246,7 @@ impl SpectreEncoderConfig {
 
 impl<B: Backend> SpectreViT<B> {
     pub fn forward(&self, images: Tensor<B, 4>) -> Tensor<B, 2> {
+        //let x = self.compressor.forward(images.clone());
         let x = self.embedding_block.forward(images);
         let x = self.encoder.forward(x);
         let x = self.layer_norm.forward(x);
@@ -235,7 +260,8 @@ impl<B: Backend> SpectreViT<B> {
 
 impl SpectreViTConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> SpectreViT<B> {
-        let num_patches = (self.image_size / self.patch_size).pow(2);
+        let num_patches = (self.image_size / self.patch_size).pow(2) + 1;
+        //let num_patches = 17;
         SpectreViT {
             embedding_block: SpectrePatchEmbeddingConfig::new(
                 self.in_channels,
@@ -243,12 +269,13 @@ impl SpectreViTConfig {
                 self.patch_size,
                 self.image_size,
                 self.dropout,
+                num_patches,
             )
             .init(device),
 
             encoder: SpectreEncoderConfig::new(
                 self.num_layers,
-                num_patches + 1,
+                num_patches,
                 self.embed_dim,
                 self.num_heads,
                 self.hid_dim,
@@ -259,6 +286,8 @@ impl SpectreViTConfig {
             .init(device),
             layer_norm: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
             linear: LinearConfig::new(self.embed_dim, self.num_classes).init(device),
+            compressor: SpectralCompressConfig::new(SpectralTransform::Cosine, self.image_size)
+                .init(device),
         }
     }
 }
