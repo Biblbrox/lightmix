@@ -83,7 +83,7 @@ def decode(raw: bytes, spec: dict) -> bytes:
 
 def write_arrow(parquet_path: Path, out_path: Path, dataset):
     spec = DATASET_SPECS[dataset]
-    batch_size = 2048
+    batch_size = 128
     arrow_path = out_path.joinpath(f"{parquet_path.stem}.arrow")
 
     image_col: str = DATASET_SPECS[dataset]["imagecol"]
@@ -98,16 +98,12 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset):
     print(schema)
     # It would be nice to have a progress bar
     df = df.with_columns(
-        pl.col("image").map_elements(
-            lambda bytes: decode(bytes, spec), return_dtype=pl.Binary
-        )
+        pl.col("image").map_elements(lambda bytes: decode(bytes, spec), return_dtype=pl.Binary)
     )
 
-    df = df.with_columns(
+    df.with_columns(
         pl.col(["image", DATASET_SPECS[dataset]["labelcol"]]).shuffle(seed=42)
-    )
-
-    df.sink_ipc(arrow_path, record_batch_size=batch_size)  # , compression="lz4")
+    ).sink_ipc(arrow_path, record_batch_size=batch_size)
 
 
 def convert(in_path: Path, out_path: Path, dataset):
@@ -132,9 +128,7 @@ def convert(in_path: Path, out_path: Path, dataset):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Dataset converter tool")
-    parser.add_argument(
-        "-i", dest="i", help="Path to parquet dataset", type=str, required=True
-    )
+    parser.add_argument("-i", dest="i", help="Path to parquet dataset", type=str, required=True)
     parser.add_argument(
         "-o", dest="o", help="Path to output arrow dataset", type=str, required=True
     )
