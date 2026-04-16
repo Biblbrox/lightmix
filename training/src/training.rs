@@ -62,17 +62,17 @@ use crate::{
 //type Batcher = FashionMnistBatcher;
 //type Mapper = FashionMnistMapper;
 
-type Dataset = TinyImageNetDataset;
-type Batcher = TinyImageNetBatcher;
-type Mapper = TinyImageNetMapper;
+//type Dataset = TinyImageNetDataset;
+//type Batcher = TinyImageNetBatcher;
+//type Mapper = TinyImageNetMapper;
 
 //type Dataset = Food101Dataset;
 //type Batcher = Food101Batcher;
 //type Mapper = Food101Mapper;
 
-//type Dataset = Cifar100Dataset;
-//type Batcher = Cifar100Batcher;
-//type Mapper = Cifar100Mapper;
+type Dataset = Cifar100Dataset;
+type Batcher = Cifar100Batcher;
+type Mapper = Cifar100Mapper;
 
 //type Dataset = Cifar10Dataset;
 //type Batcher = Cifar10Batcher;
@@ -139,7 +139,7 @@ pub fn train<B: AutodiffBackend>(
     let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
         config.batch_size as usize,
-        config.batch_size as usize * 10,
+        config.batch_size as usize,
         config.num_workers as usize,
     ); //.with_mapper(Mapper::decoder());
 
@@ -186,10 +186,12 @@ pub fn train<B: AutodiffBackend>(
     let dataloader_train = InMemoryDataLoaderBuilder::<B>::new(batcher.clone())
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
+        .with_num_workers(config.num_workers as usize)
         .with_batch_size(config.batch_size as usize)
         .build(ds.train());
     let dataloader_val = InMemoryDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_transforms(Arc::new(pipeline_val))
+        .with_num_workers(config.num_workers as usize)
         .with_batch_size(config.batch_size as usize)
         .with_device(device.clone())
         .build(ds.validation());

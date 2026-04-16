@@ -55,7 +55,7 @@ fn main() {
             localpath.to_str().unwrap()
         );
     }
-    let dataset = "tinyimagenet";
+    let dataset = "cifar100";
     let model_name = "spectre_vit_tiny";
     let config = Config::parse(&path, dataset, model_name, Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());

@@ -77,9 +77,6 @@ std = [0.3081]
 
 
 [vit_tiny]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 768
@@ -91,9 +88,6 @@ activation = "gelu"
 num_encoders = 12
 
 [vit_small]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 1536
@@ -105,9 +99,6 @@ activation = "gelu"
 num_encoders = 12
 
 [vit_base]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 3072
@@ -119,9 +110,6 @@ activation = "gelu"
 num_encoders = 12
 
 [vit_large]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 4096
@@ -133,9 +121,6 @@ activation = "gelu"
 num_encoders = 24
 
 [vit_huge]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 5120
@@ -148,9 +133,6 @@ num_encoders = 32
 
 
 [spectre_vit_tiny]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 768
@@ -163,9 +145,6 @@ num_encoders = 12
 sinkhorn_temp = 0.05
 
 [spectre_vit_small]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 1536
@@ -178,9 +157,6 @@ num_encoders = 12
 sinkhorn_temp = 0.05
 
 [spectre_vit_base]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 3072
@@ -193,9 +169,6 @@ num_encoders = 12
 sinkhorn_temp = 0.05
 
 [spectre_vit_large]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 4096
@@ -208,9 +181,6 @@ num_encoders = 24
 sinkhorn_temp = 0.05
 
 [spectre_vit_huge]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
 patch_size = 16
 dropout = 0.001
 hidden_dim = 5120

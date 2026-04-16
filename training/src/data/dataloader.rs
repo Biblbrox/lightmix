@@ -341,6 +341,7 @@ impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(recv) = &self.channel {
+            self.items_processed += self.batch_size;
             recv.lock().unwrap().recv().ok()
         } else {
             let (offset, length) = match self.items_processed + self.batch_size {

@@ -73,11 +73,11 @@ impl Config {
                 .iter()
                 .map(|v| v.as_float().unwrap() as f32)
                 .collect(),
+            batch_size: config[dataset]["batch_size"].as_integer().unwrap(),
+            val_batch_size: config[dataset]["val_batch_size"].as_integer().unwrap(),
+            epochs: config[dataset]["epochs"].as_integer().unwrap(),
 
             // Model params
-            batch_size: config[model]["batch_size"].as_integer().unwrap(),
-            val_batch_size: config[model]["val_batch_size"].as_integer().unwrap(),
-            epochs: config[model]["epochs"].as_integer().unwrap(),
             patch_size: config[model]["patch_size"].as_integer().unwrap(),
             num_heads: config[model]["num_heads"].as_integer().unwrap(),
             dropout: config[model]["dropout"].as_float().unwrap(),
