@@ -5,7 +5,7 @@ use crate::{
     augmentations::Pipeline,
     data::{
         batch::{Batch, FrameBatcher},
-        dataloader::StreamingDataLoader,
+        dataloader::{InMemoryDataLoader, StreamingDataLoader},
         mapper::LazyMapper,
         strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
     },
@@ -58,6 +58,50 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
                 .unwrap_or(Box::new(FixedBatchStrategy::new(1))),
             self.transforms
                 .unwrap_or(Arc::new(Pipeline::<B>::default())),
+            self.device.unwrap_or_default(),
+        ))
+    }
+}
+
+pub struct InMemoryDataLoaderBuilder<B: Backend> {
+    batcher: Arc<dyn FrameBatcher<B>>,
+    transforms: Option<Arc<Pipeline<B>>>,
+    batch_size: Option<usize>,
+    device: Option<B::Device>,
+}
+
+impl<B: Backend> InMemoryDataLoaderBuilder<B> {
+    pub fn new(batcher: Arc<dyn FrameBatcher<B>>) -> Self {
+        Self {
+            batcher,
+            transforms: None,
+            batch_size: None,
+            device: None,
+        }
+    }
+
+    pub fn with_transforms(mut self, transforms: Arc<Pipeline<B>>) -> Self {
+        self.transforms = Some(transforms);
+        self
+    }
+
+    pub fn with_device(mut self, device: B::Device) -> Self {
+        self.device = Some(device);
+        self
+    }
+
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = Some(batch_size);
+        self
+    }
+
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
+        Arc::new(InMemoryDataLoader::new(
+            dataset,
+            self.batcher,
+            self.transforms
+                .unwrap_or(Arc::new(Pipeline::<B>::default())),
+            self.batch_size.unwrap_or(1),
             self.device.unwrap_or_default(),
         ))
     }
