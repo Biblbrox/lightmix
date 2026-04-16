@@ -174,3 +174,125 @@ impl<B: Backend> DataLoaderIterator<Batch<B>> for StreamingDataLoaderIterator<B>
         )
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// IN-MEMORY DATALOADER SECTION
+///////////////////////////////////////////////////////////////////////////////
+pub struct InMemoryDataLoader<B: Backend> {
+    df: DataFrame,
+    batcher: Arc<dyn FrameBatcher<B>>,
+    transforms: Arc<Pipeline<B>>,
+    items_total: usize,
+    batch_size: usize,
+    device: B::Device,
+}
+
+impl<B: Backend> InMemoryDataLoader<B> {
+    pub fn new(
+        df: impl Into<LazyFrame>,
+        batcher: Arc<dyn FrameBatcher<B>>,
+        transforms: Arc<Pipeline<B>>,
+        batch_size: usize,
+        device: B::Device,
+    ) -> Self {
+        let lf = df.into();
+        let items_total = lf
+            .clone()
+            .select([len()])
+            .collect_with_engine(Engine::Streaming)
+            .unwrap()
+            .column("len")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .get(0)
+            .unwrap() as usize;
+        Self {
+            df: lf.collect().unwrap(),
+            batcher,
+            transforms,
+            items_total,
+            batch_size,
+            device,
+        }
+    }
+}
+
+impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
+    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
+        Box::new(InMemoryDataLoaderIterator {
+            df: &self.df,
+            batcher: self.batcher.clone(),
+            transforms: self.transforms.clone(),
+            batch_size: self.batch_size,
+            items_processed: 0,
+            items_total: self.items_total,
+            device: &self.device,
+        })
+    }
+
+    fn num_items(&self) -> usize {
+        self.items_total
+    }
+
+    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
+        Arc::new(Self {
+            df: self.df.clone(),
+            batcher: self.batcher.clone(),
+            transforms: self.transforms.clone(),
+            items_total: self.items_total,
+            batch_size: self.batch_size,
+            device: device.clone(),
+        })
+    }
+
+    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
+        Arc::new(Self {
+            df: self.df.slice(start as i64, end - start),
+            batcher: self.batcher.clone(),
+            transforms: self.transforms.clone(),
+            items_total: self.items_total,
+            batch_size: self.batch_size,
+            device: self.device.clone(),
+        })
+    }
+}
+
+pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
+    df: &'a DataFrame,
+    batcher: Arc<dyn FrameBatcher<B>>,
+    transforms: Arc<Pipeline<B>>,
+    batch_size: usize,
+    items_processed: usize,
+    items_total: usize,
+    device: &'a B::Device,
+}
+
+impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
+    type Item = Batch<B>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (offset, length) = match self.items_processed + self.batch_size {
+            x if x <= self.items_total => (self.items_processed, self.batch_size),
+            x if x < self.items_total + self.batch_size => (
+                self.items_processed,
+                self.items_total - self.items_processed,
+            ),
+            _ => (0, 0),
+        };
+
+        self.items_processed += length;
+
+        (length > 0).then_some(self.batcher.batch(
+            self.df.slice(offset as i64, length),
+            self.transforms.clone(),
+            self.device,
+        ))
+    }
+}
+
+impl<'a, B: Backend> DataLoaderIterator<Batch<B>> for InMemoryDataLoaderIterator<'a, B> {
+    fn progress(&self) -> Progress {
+        Progress::new(self.items_processed, self.items_total)
+    }
+}
