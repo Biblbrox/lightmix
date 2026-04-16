@@ -142,7 +142,6 @@ pub struct StaticPermuterBenchmark<B: Backend> {
     pub num_tokens: usize,
     pub batch_size: usize,
     pub num_heads: usize,
-    pub out_channels: usize,
     pub device: B::Device,
 }
 
@@ -161,7 +160,6 @@ impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
                 self.embed_dim,
                 self.num_tokens,
                 self.num_heads,
-                self.out_channels,
                 1,
                 PermutationStrategy::Random,
             )
