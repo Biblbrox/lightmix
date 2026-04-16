@@ -67,6 +67,7 @@ pub struct InMemoryDataLoaderBuilder<B: Backend> {
     batcher: Arc<dyn FrameBatcher<B>>,
     transforms: Option<Arc<Pipeline<B>>>,
     batch_size: Option<usize>,
+    num_workers: Option<usize>,
     device: Option<B::Device>,
 }
 
@@ -76,6 +77,7 @@ impl<B: Backend> InMemoryDataLoaderBuilder<B> {
             batcher,
             transforms: None,
             batch_size: None,
+            num_workers: None,
             device: None,
         }
     }
@@ -95,6 +97,11 @@ impl<B: Backend> InMemoryDataLoaderBuilder<B> {
         self
     }
 
+    pub fn with_num_workers(mut self, num_workers: usize) -> Self {
+        self.num_workers = Some(num_workers);
+        self
+    }
+
     pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(InMemoryDataLoader::new(
             dataset,
@@ -102,6 +109,7 @@ impl<B: Backend> InMemoryDataLoaderBuilder<B> {
             self.transforms
                 .unwrap_or(Arc::new(Pipeline::<B>::default())),
             self.batch_size.unwrap_or(1),
+            self.num_workers.unwrap_or(0),
             self.device.unwrap_or_default(),
         ))
     }

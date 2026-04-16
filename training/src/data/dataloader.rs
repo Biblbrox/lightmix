@@ -1,4 +1,11 @@
-use std::{num::NonZero, sync::Arc};
+use std::{
+    num::NonZero,
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver},
+    },
+    thread,
+};
 
 use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},
@@ -179,23 +186,25 @@ impl<B: Backend> DataLoaderIterator<Batch<B>> for StreamingDataLoaderIterator<B>
 // IN-MEMORY DATALOADER SECTION
 ///////////////////////////////////////////////////////////////////////////////
 pub struct InMemoryDataLoader<B: Backend> {
-    df: DataFrame,
+    lf: LazyFrame,
     batcher: Arc<dyn FrameBatcher<B>>,
     transforms: Arc<Pipeline<B>>,
     items_total: usize,
     batch_size: usize,
+    num_workers: usize,
     device: B::Device,
 }
 
 impl<B: Backend> InMemoryDataLoader<B> {
     pub fn new(
-        df: impl Into<LazyFrame>,
+        lf: impl Into<LazyFrame>,
         batcher: Arc<dyn FrameBatcher<B>>,
         transforms: Arc<Pipeline<B>>,
         batch_size: usize,
+        num_workers: usize,
         device: B::Device,
     ) -> Self {
-        let lf = df.into();
+        let lf = lf.into();
         let items_total = lf
             .clone()
             .select([len()])
@@ -208,27 +217,83 @@ impl<B: Backend> InMemoryDataLoader<B> {
             .get(0)
             .unwrap() as usize;
         Self {
-            df: lf.collect().unwrap(),
+            lf,
             batcher,
             transforms,
             items_total,
             batch_size,
             device,
+            num_workers,
         }
     }
 }
 
 impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
     fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
-        Box::new(InMemoryDataLoaderIterator {
-            df: &self.df,
-            batcher: self.batcher.clone(),
-            transforms: self.transforms.clone(),
-            batch_size: self.batch_size,
-            items_processed: 0,
-            items_total: self.items_total,
-            device: &self.device,
-        })
+        if self.num_workers > 0 {
+            let (tx, rx) = mpsc::sync_channel(4 * self.num_workers);
+            for idx in 0..self.num_workers {
+                let num_workers = self.num_workers;
+                let batcher = self.batcher.clone();
+                let transforms = self.transforms.clone();
+                let lf = self.lf.clone();
+                let batch_size = self.batch_size;
+                let total = self.items_total;
+                let device = self.device.clone();
+                let tx = tx.clone();
+
+                thread::spawn(move || {
+                    let mut offset = idx * batch_size;
+                    loop {
+                        let length = match offset + batch_size {
+                            x if x <= total => batch_size,
+                            x if x < total + batch_size => total - offset,
+                            _ => 0,
+                        };
+
+                        if length > 0 {
+                            tx.send(
+                                batcher.batch(
+                                    lf.clone()
+                                        .slice(offset as i64, length as u32)
+                                        .collect()
+                                        .unwrap(),
+                                    transforms.clone(),
+                                    &device,
+                                ),
+                            )
+                            .unwrap();
+                        } else {
+                            break;
+                        }
+
+                        offset += num_workers * batch_size;
+                    }
+                });
+            }
+
+            Box::new(InMemoryDataLoaderIterator {
+                lf: self.lf.clone(),
+                channel: Some(Arc::new(Mutex::new(rx))),
+                batcher: self.batcher.clone(),
+                transforms: self.transforms.clone(),
+                batch_size: self.batch_size,
+                items_processed: 0,
+                items_total: self.items_total,
+                device: &self.device,
+            })
+        } else {
+            Box::new(InMemoryDataLoaderIterator {
+                lf: self.lf.clone(),
+                channel: None,
+                batcher: self.batcher.clone(),
+                transforms: self.transforms.clone(),
+                batch_size: self.batch_size,
+                items_processed: 0,
+                items_total: self.items_total,
+                device: &self.device,
+            })
+        }
     }
 
     fn num_items(&self) -> usize {
@@ -237,29 +302,32 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
 
     fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(Self {
-            df: self.df.clone(),
+            lf: self.lf.clone(),
             batcher: self.batcher.clone(),
             transforms: self.transforms.clone(),
             items_total: self.items_total,
             batch_size: self.batch_size,
+            num_workers: self.num_workers,
             device: device.clone(),
         })
     }
 
     fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(Self {
-            df: self.df.slice(start as i64, end - start),
+            lf: self.lf.clone().slice(start as i64, (end - start) as u32),
             batcher: self.batcher.clone(),
             transforms: self.transforms.clone(),
             items_total: self.items_total,
             batch_size: self.batch_size,
+            num_workers: self.num_workers,
             device: self.device.clone(),
         })
     }
 }
 
 pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
-    df: &'a DataFrame,
+    lf: LazyFrame,
+    channel: Option<Arc<Mutex<Receiver<Batch<B>>>>>,
     batcher: Arc<dyn FrameBatcher<B>>,
     transforms: Arc<Pipeline<B>>,
     batch_size: usize,
@@ -272,22 +340,32 @@ impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
     type Item = Batch<B>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (offset, length) = match self.items_processed + self.batch_size {
-            x if x <= self.items_total => (self.items_processed, self.batch_size),
-            x if x < self.items_total + self.batch_size => (
-                self.items_processed,
-                self.items_total - self.items_processed,
-            ),
-            _ => (0, 0),
-        };
+        if let Some(recv) = &self.channel {
+            recv.lock().unwrap().recv().ok()
+        } else {
+            let (offset, length) = match self.items_processed + self.batch_size {
+                x if x <= self.items_total => (self.items_processed, self.batch_size),
+                x if x < self.items_total + self.batch_size => (
+                    self.items_processed,
+                    self.items_total - self.items_processed,
+                ),
+                _ => (0, 0),
+            };
 
-        self.items_processed += length;
+            self.items_processed += length;
 
-        (length > 0).then_some(self.batcher.batch(
-            self.df.slice(offset as i64, length),
-            self.transforms.clone(),
-            self.device,
-        ))
+            (length > 0).then_some(
+                self.batcher.batch(
+                    self.lf
+                        .clone()
+                        .slice(offset as i64, length as u32)
+                        .collect()
+                        .unwrap(),
+                    self.transforms.clone(),
+                    self.device,
+                ),
+            )
+        }
     }
 }
 
