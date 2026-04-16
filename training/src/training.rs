@@ -42,7 +42,7 @@ use crate::{
             fashionmnist::FashionMnistBatcher, food101::Food101Batcher,
             imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher, tinyimagenet::TinyImageNetBatcher,
         },
-        builder::StreamingDataLoaderBuilder,
+        builder::{InMemoryDataLoaderBuilder, StreamingDataLoaderBuilder},
         dataset::{
             LazyDataset, LazyFiletype, cifar10::Cifar10Dataset, cifar100::Cifar100Dataset,
             fashionmnist::FashionMnistDataset, food101::Food101Dataset,
@@ -139,7 +139,7 @@ pub fn train<B: AutodiffBackend>(
     let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
         config.batch_size as usize,
-        config.batch_size as usize * 100,
+        config.batch_size as usize * 10,
         config.num_workers as usize,
     ); //.with_mapper(Mapper::decoder());
 
@@ -172,14 +172,25 @@ pub fn train<B: AutodiffBackend>(
     let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val];
     let pipeline_val = Pipeline::<B::InnerBackend>::new(transforms_val);
 
-    let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
-        .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
+    //let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
+    //    .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
+    //    .with_transforms(Arc::new(pipeline_train))
+    //    .with_device(device.clone())
+    //    .build(ds.train());
+    //let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
+    //    .with_strategy(strategy)
+    //    .with_transforms(Arc::new(pipeline_val))
+    //    .with_device(device.clone())
+    //    .build(ds.validation());
+
+    let dataloader_train = InMemoryDataLoaderBuilder::<B>::new(batcher.clone())
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
+        .with_batch_size(config.batch_size as usize)
         .build(ds.train());
-    let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
-        .with_strategy(strategy)
+    let dataloader_val = InMemoryDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
         .with_transforms(Arc::new(pipeline_val))
+        .with_batch_size(config.batch_size as usize)
         .with_device(device.clone())
         .build(ds.validation());
 
