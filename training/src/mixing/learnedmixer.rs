@@ -8,7 +8,7 @@ use burn::{
 /// Permuter implementation with learned permutation matrix
 #[derive(Module, Debug)]
 pub struct LearnedPermuter<B: Backend> {
-    signs: Param<Tensor<B, 3>>,
+    signs: Param<Tensor<B, 4>>,
     sinkhorn_scores: Param<Tensor<B, 3>>, // [H, Nd, Nd]
     num_heads: usize,
     embed_dim: usize,
@@ -40,8 +40,9 @@ impl<B: Backend> LearnedPermuter<B> {
         let mut p = s.exp();
 
         for _ in 0..self.sinkhorn_iters {
-            p = p.clone() / p.clone().sum_dim(2); // row-normalise -> rows sum to 1
-            p = p.clone() / p.clone().sum_dim(1); // col-normalise -> cols sum to 1
+            //p = p.clone() / p.clone().sum_dim(2); // row-normalise -> rows sum to 1
+            //p = p.clone() / p.clone().sum_dim(1); // col-normalise -> cols sum to 1
+            p = p.clone() / p.clone().sum_dims(&[2, 1]); // col-normalise -> cols sum to 1
         }
 
         p // [H, Nd, Nd]
@@ -89,12 +90,7 @@ impl<B: Backend> LearnedPermuter<B> {
             //x_heads.gather(2, indices) // [B, H, Nd, E/H]
         };
 
-        let signs =
-            self.signs
-                .val()
-                .clone()
-                .reshape([1, self.num_heads, self.seq_length, head_dim]);
-        let permuted = permuted * signs;
+        let permuted = permuted * self.signs.val();
 
         let permuted = permuted.swap_dims(1, 2).reshape([b, e, self.seq_length]);
 
@@ -131,7 +127,13 @@ impl LearnedPermuterConfig {
         let signs = Tensor::cat(signs_list, 0);
 
         LearnedPermuter {
-            signs: Param::from_tensor(signs).set_require_grad(true),
+            signs: Param::from_tensor(signs.reshape([
+                1,
+                self.num_heads,
+                self.seq_length,
+                head_dim,
+            ]))
+            .set_require_grad(true),
             sinkhorn_scores: Param::from_tensor(scores).set_require_grad(true),
             num_heads: self.num_heads,
             embed_dim: self.embed_dim,

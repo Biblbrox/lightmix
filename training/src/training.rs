@@ -139,7 +139,7 @@ pub fn train<B: AutodiffBackend>(
     let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
         config.batch_size as usize,
-        config.batch_size as usize,
+        config.batch_size as usize * 100,
         config.num_workers as usize,
     ); //.with_mapper(Mapper::decoder());
 
