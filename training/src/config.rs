@@ -49,46 +49,18 @@ impl Config {
         }
 
         Config {
+            // Global params
             random_seed: config["random_seed"].as_integer().unwrap(),
             learning_rate: config["learning_rate"].as_float().unwrap(),
             cache_dir: config["cache_dir"].as_str().unwrap().into(),
+            num_workers: config["num_workers"].as_integer().unwrap(),
+            continue_training: config["continue_training"].as_bool().unwrap(),
+            resume_epoch: config["resume_epoch"].as_integer().unwrap(),
+
+            // Dataset params
             num_classes: config[dataset]["num_classes"].as_integer().unwrap(),
             img_size: config[dataset]["img_size"].as_integer().unwrap(),
             in_channels: config[dataset]["in_channels"].as_integer().unwrap(),
-            batch_size: config[dataset][model]["batch_size"].as_integer().unwrap(),
-            val_batch_size: config[dataset][model]["val_batch_size"]
-                .as_integer()
-                .unwrap(),
-            epochs: config[dataset][model]["epochs"].as_integer().unwrap(),
-            patch_size: config[dataset][model]["patch_size"].as_integer().unwrap(),
-            num_heads: config[dataset][model]["num_heads"].as_integer().unwrap(),
-            dropout: config[dataset][model]["dropout"].as_float().unwrap(),
-            hidden_dim: config[dataset][model]["hidden_dim"].as_integer().unwrap(),
-            adam_weight_decay: config[dataset][model]["adam_weight_decay"]
-                .as_float()
-                .unwrap(),
-            adam_betas: config[dataset][model]["adam_betas"]
-                .as_array()
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .clone()
-                .map(|v| v.as_float().unwrap()),
-            activation: config[dataset][model]["activation"]
-                .as_str()
-                .unwrap()
-                .into(),
-            num_encoders: config[dataset][model]["num_encoders"].as_integer().unwrap(),
-            kernel_size: match config[dataset][model].get("kernel_size") {
-                Some(v) => Some(v.as_integer().unwrap()),
-                None => None,
-            },
-            embed_dim: config[dataset][model]["embed_dim"].as_integer().unwrap(),
-            num_workers: config["num_workers"].as_integer().unwrap(),
-            continue_training: config[dataset][model]["continue_training"]
-                .as_bool()
-                .unwrap(),
-            resume_epoch: config[dataset][model]["resume_epoch"].as_integer().unwrap(),
             mean: config[dataset]["mean"]
                 .as_array()
                 .unwrap()
@@ -101,7 +73,31 @@ impl Config {
                 .iter()
                 .map(|v| v.as_float().unwrap() as f32)
                 .collect(),
-            sinkhorn_temp: config["sinkhorn_temp"].as_float().unwrap(),
+
+            // Model params
+            batch_size: config[model]["batch_size"].as_integer().unwrap(),
+            val_batch_size: config[model]["val_batch_size"].as_integer().unwrap(),
+            epochs: config[model]["epochs"].as_integer().unwrap(),
+            patch_size: config[model]["patch_size"].as_integer().unwrap(),
+            num_heads: config[model]["num_heads"].as_integer().unwrap(),
+            dropout: config[model]["dropout"].as_float().unwrap(),
+            hidden_dim: config[model]["hidden_dim"].as_integer().unwrap(),
+            adam_weight_decay: config[model]["adam_weight_decay"].as_float().unwrap(),
+            adam_betas: config[model]["adam_betas"]
+                .as_array()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .clone()
+                .map(|v| v.as_float().unwrap()),
+            activation: config[model]["activation"].as_str().unwrap().into(),
+            num_encoders: config[model]["num_encoders"].as_integer().unwrap(),
+            kernel_size: match config[model].get("kernel_size") {
+                Some(v) => Some(v.as_integer().unwrap()),
+                None => None,
+            },
+            embed_dim: config[model]["embed_dim"].as_integer().unwrap(),
+            sinkhorn_temp: config[model]["sinkhorn_temp"].as_float().unwrap(),
         }
     }
 

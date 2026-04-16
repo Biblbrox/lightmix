@@ -62,9 +62,9 @@ use crate::{
 //type Batcher = FashionMnistBatcher;
 //type Mapper = FashionMnistMapper;
 
-//type Dataset = TinyImageNetDataset;
-//type Batcher = TinyImageNetBatcher;
-//type Mapper = TinyImageNetMapper;
+type Dataset = TinyImageNetDataset;
+type Batcher = TinyImageNetBatcher;
+type Mapper = TinyImageNetMapper;
 
 //type Dataset = Food101Dataset;
 //type Batcher = Food101Batcher;
@@ -78,9 +78,9 @@ use crate::{
 //type Batcher = Cifar10Batcher;
 //type Mapper = Cifar10Mapper;
 
-type Dataset = ImageNet1kDataset;
-type Batcher = ImageNet1kBatcher;
-type Mapper = ImageNet1kMapper;
+//type Dataset = ImageNet1kDataset;
+//type Batcher = ImageNet1kBatcher;
+//type Mapper = ImageNet1kMapper;
 
 impl<B: Backend> Model<B> {
     pub fn forward_classification(
@@ -163,8 +163,8 @@ pub fn train<B: AutodiffBackend>(
         random_flip_hor,
         color_jitter,
         //random_gray,
-        //random_affine,
-        //random_flip_ver,
+        random_affine,
+        random_flip_ver,
         normalize,
     ]; //, color_jitter, random_flip_hor, random_flip_ver];
     let pipeline_train = Pipeline::new(transforms_train);

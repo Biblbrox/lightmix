@@ -19,8 +19,9 @@ use crate::{config::Config, models::spectre_vit::SpectreViTConfig as ModelConfig
 use burn::{
     backend::{Autodiff, Cuda, NdArray},
     optim::AdamWConfig,
+    tensor::bf16,
 };
-use simplelog::{LevelFilter, SharedLogger, WriteLogger};
+use simplelog::{LevelFilter, WriteLogger};
 use tikv_jemallocator::Jemalloc;
 
 fn init_logger() {
@@ -40,9 +41,6 @@ fn main() {
     let device = burn::backend::cuda::CudaDevice::default();
     init_logger();
 
-    //type MyBackend = Vulkan<f32, i32>;
-    //let device = burn::backend::wgpu::WgpuDevice::default();
-
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
     let cwd = current_dir().unwrap();
@@ -57,8 +55,8 @@ fn main() {
             localpath.to_str().unwrap()
         );
     }
-    let dataset = "imagenet1k";
-    let model_name = "spectre_vit";
+    let dataset = "tinyimagenet";
+    let model_name = "spectre_vit_tiny";
     let config = Config::parse(&path, dataset, model_name, Some(&localpath));
     println!("Config loaded from path {}", path.to_str().unwrap());
     let dataset_path_buf = PathBuf::from(config.cache_dir.as_str()).join(dataset);
@@ -71,7 +69,6 @@ fn main() {
     let dataset_path = dataset_path_buf.as_path().to_str().unwrap();
     println!("Loading dataset from path {}", dataset_path);
 
-    // let device = burn::backend::wgpu::WgpuDevice::default();
     let artifact_dir = format!(
         "./assets/{}-{}-head{:?}-hid{:?}-emb{:?}-enc{:?}-temp-{}-learnedmixer",
         model_name,

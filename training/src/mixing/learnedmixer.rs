@@ -25,7 +25,7 @@ pub struct LearnedPermuterConfig {
     seq_length: usize,
     num_heads: usize,
     temperature: f32,
-    #[config(default = 20)]
+    #[config(default = 5)]
     sinkhorn_iters: usize,
 }
 
@@ -75,16 +75,18 @@ impl<B: Backend> LearnedPermuter<B> {
             let p4d = p_soft.unsqueeze_dim::<4>(0); //.repeat_dim(0, b); // [B, H, Nd, Nd]
             p4d.matmul(x_heads) // [B, H, Nd, E/H]
         } else {
+            let p4d = p_soft.unsqueeze_dim::<4>(0); //.repeat_dim(0, b); // [B, H, Nd, Nd]
+            p4d.matmul(x_heads) // [B, H, Nd, E/H]
             // Expand indices to [B, H, Nd] then [B, H, Nd, E/H] for gather
-            let indices = p_soft
-                .argmax(2) // [H, Nd, 1]  — Burn keeps the dim
-                .squeeze_dim::<2>(2) // [H, Nd]     — rank 2
-                .unsqueeze_dim::<3>(0) // [1, H, Nd]  — rank 3
-                .repeat_dim(0, b) // [B, H, Nd]  — rank 3
-                .unsqueeze_dim::<4>(3) // [B, H, Nd, 1] — rank 4
-                .repeat_dim(3, head_dim); // [B, H, Nd, E/H]
+            //let indices = p_soft
+            //    .argmax(2) // [H, Nd, 1]  — Burn keeps the dim
+            //    .squeeze_dim::<2>(2) // [H, Nd]     — rank 2
+            //    .unsqueeze_dim::<3>(0) // [1, H, Nd]  — rank 3
+            //    .repeat_dim(0, b) // [B, H, Nd]  — rank 3
+            //    .unsqueeze_dim::<4>(3) // [B, H, Nd, 1] — rank 4
+            //    .repeat_dim(3, head_dim); // [B, H, Nd, E/H]
 
-            x_heads.gather(2, indices) // [B, H, Nd, E/H]
+            //x_heads.gather(2, indices) // [B, H, Nd, E/H]
         };
 
         let signs =
