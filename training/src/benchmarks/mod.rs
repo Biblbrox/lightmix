@@ -1,6 +1,7 @@
 use burn::backend::Autodiff;
 
 //pub mod kernels;
+pub mod data;
 pub mod mixing;
 pub mod models;
 pub mod norm;
