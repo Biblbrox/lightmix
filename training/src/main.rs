@@ -1,25 +1,13 @@
 #![recursion_limit = "2048"]
 
-mod augmentations;
-mod benchmarks;
-mod compression;
-mod config;
-mod data;
-mod kernels;
-mod mixing;
-mod models;
-mod norm;
-mod tokenization;
-mod training;
-mod utils;
-
 use std::{env::current_dir, fs::File, path::PathBuf};
 
-use crate::{config::Config, models::spectre_vit::SpectreViTConfig as ModelConfig};
-use burn::{
-    backend::{Autodiff, Cuda, NdArray},
-    optim::AdamWConfig,
-    tensor::bf16,
+use burn::{backend::Cuda, grad_clipping::GradientClippingConfig, optim::AdamWConfig};
+use embed_former_train::{
+    config::Config,
+    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset},
+    models::fast_vit::FastViTConfig,
+    training::train,
 };
 use simplelog::{LevelFilter, WriteLogger};
 use tikv_jemallocator::Jemalloc;
@@ -37,11 +25,10 @@ fn init_logger() {
 static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() {
+    //type MyBackend = Cuda<bf16, i16>;
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
     init_logger();
-
-    type MyAutodiffBackend = Autodiff<MyBackend>;
 
     let cwd = current_dir().unwrap();
     let path = cwd.join("training/experiments.toml");
@@ -79,12 +66,52 @@ fn main() {
         config.num_encoders,
         config.sinkhorn_temp,
     );
-    crate::training::train::<MyAutodiffBackend>(
+
+    //let e = config.embed_dim as usize;
+    //let model_config = ModelConfig::new(
+    //    config.in_channels as usize,
+    //    config.num_classes as usize,
+    //    config.patch_size as usize,
+    //    config.img_size as usize,
+    //    config.dropout,
+    //    config.sinkhorn_temp as f32,
+    //    4,
+    //    vec![
+    //        e,
+    //        e,
+    //        e,
+    //        e * 2,
+    //        e * 2,
+    //        e * 2,
+    //        e * 4,
+    //        e * 4,
+    //        e * 4,
+    //        e * 4,
+    //        e * 4,
+    //        e * 4,
+    //    ],
+    //    vec![
+    //        e * 4,
+    //        e * 4,
+    //        e * 4,
+    //        e * 8,
+    //        e * 8,
+    //        e * 8,
+    //        e * 16,
+    //        e * 16,
+    //        e * 16,
+    //        e * 16,
+    //        e * 16,
+    //        e * 16,
+    //    ],
+    //    vec![4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8],
+    //);
+
+    train::<MyBackend>(
         &artifact_dir,
-        dataset_path,
         config.clone(),
         device.clone(),
-        ModelConfig::new(
+        FastViTConfig::new(
             config.in_channels as usize,
             config.embed_dim as usize,
             config.num_heads as usize,
@@ -96,8 +123,11 @@ fn main() {
             config.dropout,
             config.sinkhorn_temp as f32,
         ),
+        Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow),
+        //model_config,
         AdamWConfig::new()
             .with_weight_decay(config.adam_weight_decay as f32)
+            .with_grad_clipping(Some(GradientClippingConfig::Norm(1.0)))
             .with_beta_1(config.adam_betas[0] as f32)
             .with_beta_2(config.adam_betas[1] as f32),
     );

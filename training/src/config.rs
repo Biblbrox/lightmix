@@ -3,6 +3,8 @@ use std::{fs::File, io::Write, path::Path};
 use serde::Serialize;
 use toml::{Table, Value};
 
+use crate::augmentations::builder::TransformConfig;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Config {
     pub random_seed: i64,
@@ -30,6 +32,7 @@ pub struct Config {
     pub resume_epoch: i64,
     pub sinkhorn_temp: f64,
     pub kernel_size: Option<i64>,
+    pub augmentations: Vec<TransformConfig>,
 }
 
 impl Config {
@@ -47,6 +50,34 @@ impl Config {
             let localconfig: Table = file.parse().unwrap();
             Config::override_conf(&mut config, &localconfig);
         }
+
+        let augmentations = config
+            .get("augmentations")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("transforms"))
+            .and_then(|v| v.as_array())
+            .map(|transforms| {
+                transforms
+                    .iter()
+                    .filter_map(|entry| {
+                        let table = entry.as_table()?;
+                        let name = table.get("name")?.as_str()?.to_string();
+
+                        // Collect all fields except "name" into params
+                        let params: toml::map::Map<String, toml::Value> = table
+                            .iter()
+                            .filter(|(k, _)| k.as_str() != "name")
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
+
+                        Some(TransformConfig {
+                            name,
+                            params: toml::Value::Table(params),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         Config {
             // Global params
@@ -98,6 +129,7 @@ impl Config {
             },
             embed_dim: config[model]["embed_dim"].as_integer().unwrap(),
             sinkhorn_temp: config[model]["sinkhorn_temp"].as_float().unwrap(),
+            augmentations,
         }
     }
 

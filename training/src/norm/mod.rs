@@ -3,65 +3,77 @@ use burn::{
     config::Config,
     module::{Module, Param},
     prelude::Backend,
-    tensor::Shape,
 };
 
 #[derive(Module, Debug)]
 pub struct DynamicERF<B: Backend> {
     normalized_shape: usize,
-    alpha: Param<Tensor<B, 3>>,
-    weight: Param<Tensor<B, 3>>,
-    bias: Param<Tensor<B, 3>>,
-    shift: Param<Tensor<B, 3>>,
+    /// Stored flat — reshaped to trailing dim at runtime
+    /// There's no other way to support multiple dimensions of tensors... probably
+    alpha: Param<Tensor<B, 1>>,
+    weight: Param<Tensor<B, 1>>,
+    bias: Param<Tensor<B, 1>>,
+    shift: Param<Tensor<B, 1>>,
 }
 
 #[derive(Config, Debug)]
 pub struct DynamicERFConfig {
     normalized_shape: usize,
+    #[config(default = 0.5)]
     alpha_init_value: f32,
+    #[config(default = 0.0)]
     shift_init_value: f32,
 }
 
 impl<B: Backend> DynamicERF<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        let x = self.alpha.val() * x + self.shift.val();
-        let erf = x.erf();
-        erf * self.weight.val() + self.bias.val()
+    /// Works for any rank D >= 1.
+    /// Parameters broadcast over all leading dimensions — only the last
+    /// dimension must equal `normalized_shape`.
+    pub fn forward<const D: usize>(&self, x: Tensor<B, D>) -> Tensor<B, D> {
+        // Build a shape [1, 1, ..., 1, normalized_shape] for D dimensions
+        let mut param_shape = [1usize; D];
+        param_shape[D - 1] = self.normalized_shape;
+
+        // Scalars (alpha, shift): broadcast as all-ones shape except last = 1
+        let scalar_shape = [1usize; D];
+        // scalar_shape is already all ones — correct for broadcasting
+        let weight = self.weight.val().reshape(param_shape);
+        let bias = self.bias.val().reshape(param_shape);
+
+        // alpha and shift are scalar-like — stored as length-1 tensors
+        let alpha_s = self.alpha.val().reshape(scalar_shape);
+        let shift_s = self.shift.val().reshape(scalar_shape);
+
+        let x = alpha_s * x + shift_s;
+        x.erf() * weight + bias
     }
 }
 
 impl DynamicERFConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> DynamicERF<B> {
+        let n = self.normalized_shape;
         DynamicERF {
-            normalized_shape: self.normalized_shape,
-            alpha: Param::<Tensor<B, 3>>::from_tensor(
-                Tensor::<B, 3>::ones(Shape::new([1, 1, 1]), device) * self.alpha_init_value,
-            )
-            .set_require_grad(true),
-            weight: Param::<Tensor<B, 3>>::from_tensor(Tensor::<B, 3>::ones(
-                Shape::new([1, 1, self.normalized_shape]),
-                device,
-            ))
-            .set_require_grad(true),
-            bias: Param::<Tensor<B, 3>>::from_tensor(Tensor::<B, 3>::zeros(
-                Shape::new([1, 1, self.normalized_shape]),
-                device,
-            ))
-            .set_require_grad(true),
-            shift: Param::<Tensor<B, 3>>::from_tensor(
-                Tensor::<B, 3>::ones(Shape::new([1, 1, 1]), device) * self.shift_init_value,
-            )
-            .set_require_grad(true),
+            normalized_shape: n,
+            // alpha and shift are scalars — store as length-1 1D tensor
+            alpha: Param::from_tensor(Tensor::<B, 1>::ones([1], device) * self.alpha_init_value)
+                .set_require_grad(true),
+            shift: Param::from_tensor(Tensor::<B, 1>::ones([1], device) * self.shift_init_value)
+                .set_require_grad(true),
+            // weight and bias are per-feature — store as length-n 1D tensor
+            weight: Param::from_tensor(Tensor::<B, 1>::ones([n], device)).set_require_grad(true),
+            bias: Param::from_tensor(Tensor::<B, 1>::zeros([n], device)).set_require_grad(true),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use burn::{Tensor, tensor::Shape};
+    use burn::Tensor;
 
     use crate::norm::DynamicERFConfig;
 
+    /// Test the erf function in comparison with python implementation from
+    /// https://github.com/zlab-princeton/Derf/blob/main/ViT/dynamic_erf.py
     #[test]
     fn test_valid_erf() {
         type B = burn::backend::cuda::Cuda;
@@ -135,7 +147,7 @@ mod tests {
             &device,
         );
 
-        let erf = DynamicERFConfig::new(5, 0.5, 0.0).init(&device);
+        let erf = DynamicERFConfig::new(5).init(&device);
         let x = erf.forward(input);
         let equal = x.clone().all_close(output.clone(), Some(1e-5), Some(1e-5));
         if !equal {

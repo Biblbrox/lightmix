@@ -3,16 +3,11 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{Batch, FrameBatcher},
+    data::batch::{FrameBatcher, ImageBatch},
 };
 
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "label";
-
-pub struct Food101Batch<B: Backend> {
-    pub images: Tensor<B, 4>,
-    pub targets: Tensor<B, 1, Int>,
-}
 
 pub struct Food101Batcher;
 
@@ -23,7 +18,12 @@ impl Food101Batcher {
 }
 
 impl<B: Backend> FrameBatcher<B> for Food101Batcher {
-    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
+    fn batch(
+        &self,
+        df: DataFrame,
+        transforms: Arc<Pipeline<B>>,
+        device: &B::Device,
+    ) -> ImageBatch<B> {
         let batch_size = df.height();
 
         // Image handling
@@ -48,17 +48,15 @@ impl<B: Backend> FrameBatcher<B> for Food101Batcher {
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 96, 96, 3], DType::U8)
             .convert_dtype(DType::F32);
 
-        //let images =
-        //    transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1).div_scalar(255));
         let images = transforms.execute(
-    Tensor::<B, 4>::from_data(imagedata, device)
-        .permute([0, 3, 1, 2])   // [B,H,W,C] → [B,C,H,W]  ✓
-        .div_scalar(255.0f32)
-);
+            Tensor::<B, 4>::from_data(imagedata, device)
+                .permute([0, 3, 1, 2]) // [B,H,W,C] → [B,C,H,W]
+                .div_scalar(255),
+        );
 
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        Batch {
+        ImageBatch {
             images,
             targets: labels,
         }

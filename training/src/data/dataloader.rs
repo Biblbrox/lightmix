@@ -16,7 +16,7 @@ use polars::prelude::*;
 use crate::{
     augmentations::Pipeline,
     data::{
-        batch::{Batch, FrameBatcher},
+        batch::{FrameBatcher, ImageBatch},
         strategy::FrameBatchStrategy,
     },
 };
@@ -74,11 +74,11 @@ impl<B: Backend> StreamingDataLoader<B> {
     }
 }
 
-impl<B> DataLoader<B, Batch<B>> for StreamingDataLoader<B>
+impl<B> DataLoader<B, ImageBatch<B>> for StreamingDataLoader<B>
 where
     B: Backend,
 {
-    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
+    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<ImageBatch<B>> + 'a> {
         Box::new(StreamingDataLoaderIterator::new(
             self.dataset.clone(),
             self.batcher.clone(),
@@ -93,26 +93,36 @@ where
         self.total_items
     }
 
-    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
-        Arc::new(StreamingDataLoader::new(
-            self.dataset.clone(),
-            self.batcher.clone(),
-            self.strategy.clone_dyn(),
-            self.transforms.clone(),
-            device.clone(),
-        ))
+    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+        //Arc::new(StreamingDataLoader::new(
+        //    self.dataset.clone(),
+        //    self.batcher.clone(),
+        //    self.strategy.clone_dyn(),
+        //    self.transforms.clone(),
+        //    device.clone(),
+        //))
+        let mut loader = self.clone();
+        loader.device = device.clone();
+        Arc::new(loader)
     }
 
-    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
-        Arc::new(StreamingDataLoader::new(
-            self.dataset
-                .clone()
-                .slice(start as i64, (end - start) as u32),
-            self.batcher.clone(),
-            self.strategy.clone_dyn(),
-            self.transforms.clone(),
-            self.device.clone(),
-        ))
+    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+        //Arc::new(StreamingDataLoader::new(
+        //    self.dataset
+        //        .clone()
+        //        .slice(start as i64, (end - start) as u32),
+        //    self.batcher.clone(),
+        //    self.strategy.clone_dyn(),
+        //    self.transforms.clone(),
+        //    self.device.clone(),
+        //))
+        let mut loader = self.clone();
+        loader.dataset = self
+            .dataset
+            .clone()
+            .slice(start as i64, (end - start) as u32);
+        loader.total_items = end - start; // derive from slice bounds, no rescan
+        Arc::new(loader)
     }
 }
 
@@ -121,6 +131,7 @@ pub struct StreamingDataLoaderIterator<B: Backend> {
     batcher: Arc<dyn FrameBatcher<B>>,
     strategy: Box<dyn FrameBatchStrategy>,
     current_batch: usize,
+    items_processed: usize,
     transforms: Arc<Pipeline<B>>,
     total_items: usize,
     device: B::Device,
@@ -137,7 +148,7 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
     ) -> Self {
         let stream = dataset
             .collect_batches(
-                Engine::Auto,
+                Engine::Streaming,
                 false,
                 NonZero::new(strategy.chunk_size()),
                 true,
@@ -149,6 +160,7 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
             batcher,
             strategy,
             current_batch: 0,
+            items_processed: 0,
             transforms,
             total_items,
             device,
@@ -157,28 +169,27 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
 }
 
 impl<B: Backend> Iterator for StreamingDataLoaderIterator<B> {
-    type Item = Batch<B>;
+    type Item = ImageBatch<B>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.current_batch += 1;
 
         if let Some(df) = self.strategy.batch() {
-            return Some(
-                self.batcher
-                    .batch(df, self.transforms.clone(), &self.device),
-            );
+            let batch = self
+                .batcher
+                .batch(df, self.transforms.clone(), &self.device);
+            let batch_size = batch.targets.dims()[0];
+            self.items_processed += batch_size;
+            return Some(batch);
         }
 
         None
     }
 }
 
-impl<B: Backend> DataLoaderIterator<Batch<B>> for StreamingDataLoaderIterator<B> {
+impl<B: Backend> DataLoaderIterator<ImageBatch<B>> for StreamingDataLoaderIterator<B> {
     fn progress(&self) -> Progress {
-        Progress::new(
-            self.current_batch * self.strategy.batch_size(),
-            self.total_items,
-        )
+        Progress::new(self.items_processed, self.total_items)
     }
 }
 
@@ -228,8 +239,8 @@ impl<B: Backend> InMemoryDataLoader<B> {
     }
 }
 
-impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
-    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
+impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
+    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<ImageBatch<B>> + 'a> {
         if self.num_workers > 0 {
             let (tx, rx) = mpsc::sync_channel(4 * self.num_workers);
             for idx in 0..self.num_workers {
@@ -252,7 +263,7 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
                         };
 
                         if length > 0 {
-                            tx.send(
+                            let result = tx.send(
                                 batcher.batch(
                                     lf.clone()
                                         .slice(offset as i64, length as u32)
@@ -261,8 +272,11 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
                                     transforms.clone(),
                                     &device,
                                 ),
-                            )
-                            .unwrap();
+                            );
+
+                            if result.is_err() {
+                                break; // Receiver dropped
+                            }
                         } else {
                             break;
                         }
@@ -300,7 +314,7 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
         self.items_total
     }
 
-    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
+    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
         Arc::new(Self {
             lf: self.lf.clone(),
             batcher: self.batcher.clone(),
@@ -312,12 +326,14 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
         })
     }
 
-    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
+    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+        let len = end.saturating_sub(start);
+
         Arc::new(Self {
-            lf: self.lf.clone().slice(start as i64, (end - start) as u32),
+            lf: self.lf.clone().slice(start as i64, len as u32),
             batcher: self.batcher.clone(),
             transforms: self.transforms.clone(),
-            items_total: self.items_total,
+            items_total: len,
             batch_size: self.batch_size,
             num_workers: self.num_workers,
             device: self.device.clone(),
@@ -327,7 +343,7 @@ impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
 
 pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
     lf: LazyFrame,
-    channel: Option<Arc<Mutex<Receiver<Batch<B>>>>>,
+    channel: Option<Arc<Mutex<Receiver<ImageBatch<B>>>>>,
     batcher: Arc<dyn FrameBatcher<B>>,
     transforms: Arc<Pipeline<B>>,
     batch_size: usize,
@@ -337,12 +353,14 @@ pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
 }
 
 impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
-    type Item = Batch<B>;
+    type Item = ImageBatch<B>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(recv) = &self.channel {
-            self.items_processed += self.batch_size;
-            recv.lock().unwrap().recv().ok()
+            let batch = recv.lock().unwrap().recv().ok();
+            let batch_size = batch.as_ref().map(|t| t.targets.dims()[0]).unwrap_or(0);
+            self.items_processed += batch_size;
+            batch
         } else {
             let (offset, length) = match self.items_processed + self.batch_size {
                 x if x <= self.items_total => (self.items_processed, self.batch_size),
@@ -370,7 +388,7 @@ impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
     }
 }
 
-impl<'a, B: Backend> DataLoaderIterator<Batch<B>> for InMemoryDataLoaderIterator<'a, B> {
+impl<'a, B: Backend> DataLoaderIterator<ImageBatch<B>> for InMemoryDataLoaderIterator<'a, B> {
     fn progress(&self) -> Progress {
         Progress::new(self.items_processed, self.items_total)
     }

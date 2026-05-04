@@ -76,6 +76,17 @@ mean = [0.1307]
 std = [0.3081]
 
 
+[vit_micro]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 512
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 8
+
 [vit_tiny]
 patch_size = 16
 dropout = 0.001
@@ -130,6 +141,19 @@ adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
+
+
+[spectre_vit_micro]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 512
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 8
+sinkhorn_temp = 0.05
 
 
 [spectre_vit_tiny]
@@ -191,3 +215,47 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
 sinkhorn_temp = 0.05
+
+
+[augmentations]
+
+[[augmentations.transforms]]
+name = "random_flip"
+probability = 0.5
+orientation = "horizontal"
+
+
+[[augmentations.transforms]]
+name = "random_flip"
+probability = 0.5
+orientation = "vertical"
+
+
+[[augmentations.transforms]]
+name = "random_affine"
+probability = 0.5
+degrees = 30.0
+
+# TODO: Color jitter has bug inside
+# [[augmentations.transforms]]
+# name = "color_jitter"
+# brightness = 0.4
+# contrast = 0.4
+# saturation = 0.1
+
+[[augmentations.transforms]]
+name = "random_erasing"
+probability = 0.5
+min_scale = 0.02
+max_scale = 0.33
+#
+# [[augmentations.transforms]]
+# name = "gaussian_blur"
+# probability = 0.5
+# kernel_size = 7
+# min_sigma = 0.1
+# max_sigma = 2.0
+
+# [[augmentations.transforms]]
+# name = "random_grayscale"
+# probability = 0.5

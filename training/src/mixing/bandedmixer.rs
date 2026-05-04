@@ -177,7 +177,7 @@ impl BandedMixerConfig {
 
         BandedMixer {
             conv_qkv: Conv1dConfig::new(self.embed_dim, self.embed_dim * 3, self.kernel_size)
-                .with_padding(nn::PaddingConfig1d::Explicit(w))
+                .with_padding(nn::PaddingConfig1d::Explicit(w, w))
                 .with_groups(self.num_heads)
                 .with_bias(false)
                 .init(device),
@@ -190,7 +190,7 @@ impl BandedMixerConfig {
             temperature: self.temperature,
             half_width: w,
             num_heads: self.num_heads,
-            tok_idx: Tensor::<B, 1, Int>::arange(0..self.seq_length as i64, &device)
+            tok_idx: Tensor::<B, 1, Int>::arange(0..self.seq_length as i64, device)
                 .reshape([1, 1, self.seq_length])
                 .repeat_dim(1, self.num_heads), // i_idx: absolute position of each query token [B, H, N]
         }

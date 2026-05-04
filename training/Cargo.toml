@@ -1,37 +1,41 @@
 [package]
 name = "embed_former_train"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 
 [dependencies]
-burn = { version = "0.20.1", features = [
-  "cuda",
-  "fusion",
-  "std",
-  "train",
-  "tui",
-  "ndarray",
+burn = { version = "0.21.0-pre.4", features = [
+    "cuda",
+    "fusion",
+    "std",
+    "train",
+    "tui",
+    "vulkan",
+    "ndarray",
+    #"autotune",
+    # "x86-v4",
 ] }
 simplelog = "0.12.2"
-burn-cuda = "0.20.1"
+burn-cuda = "0.21.0-pre.4"
 polars = { version = "0.53.0", features = [
-  "async",
-  "dtype-struct",
-  "dtype-array",
-  "lazy",
-  "ipc",
-  "new_streaming",
-  "parquet",
-  "performant",
+    "async",
+    "dtype-struct",
+    "dtype-array",
+    "lazy",
+    "ipc",
+    "new_streaming",
+    "parquet",
+    "performant",
 ] }
-toml = "1.0.2"
+toml = "1.1.2+spec-1.1.0"
 walkdir = "2.5.0"
-cubecl = { version = "0.9.0", features = ["wgpu", "cuda"] }
+cubecl = { version = "0.10.0-pre.4", features = ["wgpu", "cuda"] }
 image = "0.25.10"
-burn-cubecl = "0.20.1"
+burn-cubecl = "0.21.0-pre.4"
 indicatif = "0.18.4"
 tikv-jemallocator = "0.6.1"
-burn-vision = "0.20.1"
-rand = "0.10.0"
+burn-vision = "0.21.0-pre.4"
+rand = "0.10.1"
 serde = "1.0.228"
 log = "0.4.29"
+rand_distr = "0.6.0"

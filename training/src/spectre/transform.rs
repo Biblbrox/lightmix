@@ -1,7 +1,52 @@
 use std::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI, SQRT_2, TAU};
 
-use burn::prelude::*;
 use burn::serde::{Deserialize, Serialize};
+
+use burn::{prelude::Backend, tensor::Tensor};
+
+// ── DCT matrix builders ───────────────────────────────────────────────────────
+
+/// Normalised DCT-II matrix [n, n].
+/// Row k is the k-th orthonormal DCT-II basis vector.
+fn dct_matrix(n: usize) -> Vec<f32> {
+    let mut m = vec![0.0f32; n * n];
+    for k in 0..n {
+        let scale = if k == 0 {
+            (1.0 / n as f32).sqrt()
+        } else {
+            (2.0 / n as f32).sqrt()
+        };
+        for i in 0..n {
+            m[k * n + i] = scale * (PI * k as f32 * (2 * i + 1) as f32 / (2.0 * n as f32)).cos();
+        }
+    }
+    m
+}
+
+/// Build the rectangular projection matrix of shape [out_features, in_features].
+///
+/// Strategy:
+/// - Compute the DCT-II basis for max(in, out) dimensions.
+/// - Each output row k selects basis vector `k % in_features` of the
+///   DCT computed over `in_features`, then truncates / zero-pads to
+///   `in_features` columns.
+/// - When out_features <= in_features  → first `out_features` DCT rows
+///   (low-to-high frequency, no repetition).
+/// - When out_features >  in_features  → frequencies cycle, giving
+///   the decoder a full-rank initialisation without an assert.
+pub fn build_dct_projection(in_features: usize, out_features: usize) -> Vec<f32> {
+    // DCT basis is always square over the input dimension
+    let basis = dct_matrix(in_features);
+    let mut w = vec![0.0f32; out_features * in_features];
+
+    for k in 0..out_features {
+        let src_row = k % in_features; // cycles when out > in
+        for i in 0..in_features {
+            w[k * in_features + i] = basis[src_row * in_features + i];
+        }
+    }
+    w
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SpectralTransform {

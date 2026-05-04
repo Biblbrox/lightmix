@@ -1,5 +1,4 @@
 use burn::{module::Module, prelude::*, tensor::activation::sigmoid};
-use image::EncodableLayout;
 
 /// Permuter implementation with permutation matrix
 ///
@@ -96,7 +95,6 @@ impl<B: Backend> ButterflyMixer<B> {
             let rpad = pad - lpad;
 
             // Reflect padding: boundary tokens mirror into pad positions
-            // instead of zeros — pad positions carry real signal into butterfly
             let left_pad = x.clone().slice([0..b, 0..lpad, 0..e]); // [B, lpad, E]
             let right_pad = x.clone().slice([0..b, n - rpad..n, 0..e]); // [B, rpad, E]
 

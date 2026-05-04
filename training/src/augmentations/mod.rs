@@ -2,7 +2,9 @@ use std::marker::PhantomData;
 
 use burn::prelude::*;
 
+pub mod builder;
 pub mod colors;
+pub mod mix;
 pub mod normalize;
 pub mod rotation;
 
@@ -45,6 +47,19 @@ impl<B: Backend> Pipeline<B> {
 
         res
     }
+
+    /// Prepends transforms to the front of the pipeline
+    pub fn prepend(mut self, mut transforms: Vec<Box<dyn Augmentation<B>>>) -> Self {
+        transforms.extend(self.transforms);
+        self.transforms = transforms;
+        self
+    }
+
+    /// Appends transforms to the back of the pipeline
+    pub fn append(mut self, transforms: Vec<Box<dyn Augmentation<B>>>) -> Self {
+        self.transforms.extend(transforms);
+        self
+    }
 }
 
 #[cfg(test)]
@@ -65,7 +80,7 @@ mod tests {
 
         let normalize = Box::new(Normalize::<B>::new(std, mean, &device));
         let random_rotate = Box::new(RandomAffine::<B>::new(0.5, 30.0));
-        let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.4, &device));
+        let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.4));
 
         let transforms: Vec<Box<dyn Augmentation<B>>> =
             vec![normalize, random_rotate, color_jitter];

@@ -3,16 +3,11 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{Batch, FrameBatcher},
+    data::batch::{FrameBatcher, ImageBatch},
 };
 
 const IMAGECOL: &str = "image";
 const LABELCOL: &str = "label";
-
-pub struct ImageNet1kBatch<B: Backend> {
-    pub images: Tensor<B, 4>,
-    pub targets: Tensor<B, 1, Int>,
-}
 
 pub struct ImageNet1kBatcher;
 
@@ -23,7 +18,12 @@ impl ImageNet1kBatcher {
 }
 
 impl<B: Backend> FrameBatcher<B> for ImageNet1kBatcher {
-    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
+    fn batch(
+        &self,
+        df: DataFrame,
+        transforms: Arc<Pipeline<B>>,
+        device: &B::Device,
+    ) -> ImageBatch<B> {
         let batch_size = df.height();
 
         // Image handling
@@ -47,13 +47,15 @@ impl<B: Backend> FrameBatcher<B> for ImageNet1kBatcher {
 
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 224, 224, 3], DType::U8)
             .convert_dtype(DType::F32);
-
-        let images =
-            transforms.execute(Tensor::<B, 4>::from_data(imagedata, device).swap_dims(1, -1).div_scalar(255));
-
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        Batch {
+        let images = transforms.execute(
+            Tensor::<B, 4>::from_data(imagedata, device)
+                .swap_dims(1, -1)
+                .div_scalar(255),
+        );
+
+        ImageBatch {
             images,
             targets: labels,
         }

@@ -1,2 +1,3 @@
-pub mod spectre_vit;
+pub mod hilbert;
+pub mod spectral;
 pub mod vit;

@@ -130,7 +130,7 @@ impl WeightedPermuterConfig {
             //linear2: LinearConfig::new(self.seq_length * self.num_heads / (self.num_heads / 2), self.seq_length).init(device),
             linear: LinearConfig::new(d, self.num_heads).init(device),
             params,
-            norm: DynamicERFConfig::new(self.embed_dim, 0.5, 0.0).init(device),
+            norm: DynamicERFConfig::new(self.embed_dim).init(device),
         }
     }
 }

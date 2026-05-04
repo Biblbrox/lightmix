@@ -7,11 +7,12 @@ use std::{
 };
 
 use polars::prelude::*;
+use rand::RngExt;
 
 use crate::data::{mapper::FrameMapper, strategy::FrameBatchStrategy};
 
 pub struct BufferedBatchStrategy {
-    recv: Option<Arc<Mutex<Receiver<Option<DataFrame>>>>>,
+    recv: Option<Mutex<Receiver<Option<DataFrame>>>>,
     mapper: Option<FrameMapper>,
     shuffle: Option<u64>,
     num_workers: usize,
@@ -46,7 +47,6 @@ impl Clone for BufferedBatchStrategy {
     fn clone(&self) -> Self {
         Self {
             recv: None,
-            //recv: self.recv.clone(),
             mapper: self.mapper.clone(),
             shuffle: self.shuffle,
             batch_size: self.batch_size,
@@ -64,7 +64,7 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
         let mapper = self.mapper.clone();
 
         let (tx, rx) = sync_channel(self.buffer_size);
-        self.recv = Some(Arc::new(Mutex::new(rx)));
+        self.recv = Some(Mutex::new(rx));
 
         let handles: Vec<_> = (0..self.num_workers)
             .map(|_| {
@@ -73,10 +73,12 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                 let mapper = mapper.clone();
 
                 thread::spawn(move || {
+                    let mut rng = rand::rng();
                     loop {
                         let mut stream = source.as_ref().lock().unwrap();
                         let maybe_batch = stream.next().transpose().unwrap();
                         drop(stream);
+                        let seed: u64 = rng.random();
 
                         match maybe_batch {
                             Some(mut batch) => {
@@ -84,7 +86,7 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                                     batch = map(batch);
                                 }
 
-                                if let Some(seed) = shuffle {
+                                if let Some(_) = shuffle {
                                     batch = batch
                                         .sample_n_literal(batch.height(), false, true, Some(seed))
                                         .unwrap();
@@ -97,22 +99,27 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                             None => break,
                         }
                     }
+                    drop(tx);
                 })
             })
             .collect();
 
         thread::spawn(move || {
             for handle in handles {
-                handle.join().ok();
+                if handle.join().is_err() {
+                    // worker panicked — drain and signal error
+                    eprintln!("Worker thread panicked");
+                }
             }
             tx.send(None).ok();
         });
     }
 
     fn batch(&mut self) -> Option<DataFrame> {
-        let comm = self.recv.as_ref().unwrap().lock().unwrap();
-
-        comm.recv().unwrap_or(None)
+        match self.recv.as_mut().unwrap().get_mut().unwrap().recv() {
+            Ok(maybe) => maybe,
+            Err(_) => None,
+        }
     }
 
     fn batch_size(&self) -> usize {

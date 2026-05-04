@@ -3,7 +3,7 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{Batch, FrameBatcher},
+    data::batch::{FrameBatcher, ImageBatch},
 };
 
 const IMAGECOL: &str = "image";
@@ -18,7 +18,12 @@ impl MnistBatcher {
 }
 
 impl<B: Backend> FrameBatcher<B> for MnistBatcher {
-    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
+    fn batch(
+        &self,
+        df: DataFrame,
+        transforms: Arc<Pipeline<B>>,
+        device: &B::Device,
+    ) -> ImageBatch<B> {
         let batch_size = df.height();
 
         // Image handling
@@ -50,7 +55,7 @@ impl<B: Backend> FrameBatcher<B> for MnistBatcher {
             .collect();
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        Batch {
+        ImageBatch {
             images,
             targets: labels,
         }

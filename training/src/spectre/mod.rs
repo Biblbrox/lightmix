@@ -6,8 +6,9 @@ use burn::{
     tensor::{ops::PadMode, s},
 };
 
-use crate::compression::transform::SpectralTransform;
+use crate::spectre::transform::SpectralTransform;
 
+pub mod layers;
 pub mod transform;
 
 #[derive(Module, Debug)]

@@ -4,7 +4,7 @@ use polars::prelude::*;
 use crate::{
     augmentations::Pipeline,
     data::{
-        batch::{Batch, FrameBatcher},
+        batch::{FrameBatcher, ImageBatch},
         dataloader::{InMemoryDataLoader, StreamingDataLoader},
         mapper::LazyMapper,
         strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
@@ -50,7 +50,7 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
         self
     }
 
-    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
         Arc::new(StreamingDataLoader::new(
             dataset,
             self.batcher,
@@ -102,7 +102,7 @@ impl<B: Backend> InMemoryDataLoaderBuilder<B> {
         self
     }
 
-    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
         Arc::new(InMemoryDataLoader::new(
             dataset,
             self.batcher,

@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use burn::{
-    module::{Module, Param},
+    module::Module,
     nn::{Linear, LinearConfig},
     prelude::*,
     tensor::Distribution,

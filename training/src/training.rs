@@ -1,128 +1,46 @@
 use std::{path::PathBuf, sync::Arc};
 
+use burn::prelude::Backend;
 use burn::{
-    backend::autodiff::checkpoint::strategy::CheckpointStrategy,
-    lr_scheduler::{
-        LrScheduler,
-        cosine::{CosineAnnealingLrScheduler, CosineAnnealingLrSchedulerConfig},
-        linear::{LinearLrScheduler, LinearLrSchedulerConfig},
-    },
-    module::Module,
-    nn::{LinearRecord, loss::CrossEntropyLossConfig},
-    optim::{AdamW, AdamWConfig, Optimizer, adaptor::OptimizerAdaptor},
-    prelude::Backend,
-    record::{
-        CompactRecorder, DefaultRecorder, FullPrecisionSettings, NamedMpkFileRecorder, Record,
-        Recorder,
-    },
-    tensor::{Int, Tensor, backend::AutodiffBackend},
+    backend::Autodiff,
+    data::dataloader::Progress,
+    lr_scheduler::{LrScheduler, cosine::CosineAnnealingLrSchedulerConfig},
+    module::{AutodiffModule, Module},
+    optim::{AdamWConfig, Optimizer},
+    record::{DefaultRecorder, Recorder},
     train::{
-        ClassificationOutput, EarlyStoppingStrategy, InferenceStep, Learner,
-        LearnerOptimizerRecord, MetricEarlyStoppingStrategy, StoppingCondition, SupervisedTraining,
-        TrainOutput, TrainStep, TrainingStrategy,
-        checkpoint::CheckpointingStrategy,
+        InferenceStep, Interrupter, LearnerSummary, TrainStep,
+        logger::{FileMetricLogger, MetricLogger},
         metric::{
-            AccuracyMetric, Adaptor, CpuMemory, CpuTemperature, CudaMetric, LearningRateMetric,
-            LossMetric, Metric, TopKAccuracyMetric,
+            AccuracyInput, AccuracyMetric, LossInput, LossMetric, MetricMetadata,
+            TopKAccuracyInput, TopKAccuracyMetric,
+            store::{EpochSummary, Split},
         },
+        renderer::tui::TuiMetricsRendererWrapper,
     },
 };
 
+use crate::augmentations::builder::AugmentationBuilder;
+use crate::data::builder::StreamingDataLoaderBuilder;
 use crate::{
-    augmentations::{
-        Augmentation, Pipeline,
-        colors::{ColorJitter, RandomGrayscale},
-        normalize::Normalize,
-        rotation::{Orientation, RandomAffine, RandomFlip},
-    },
+    augmentations::{Pipeline, normalize::Normalize},
     config::Config,
     data::{
-        batch::{
-            Batch, cifar10::Cifar10Batcher, cifar100::Cifar100Batcher,
-            fashionmnist::FashionMnistBatcher, food101::Food101Batcher,
-            imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher, tinyimagenet::TinyImageNetBatcher,
-        },
-        builder::{InMemoryDataLoaderBuilder, StreamingDataLoaderBuilder},
-        dataset::{
-            LazyDataset, LazyFiletype, cifar10::Cifar10Dataset, cifar100::Cifar100Dataset,
-            fashionmnist::FashionMnistDataset, food101::Food101Dataset,
-            imagenet1k::ImageNet1kDataset, mnist::MnistDataset, tinyimagenet::TinyImageNetDataset,
-        },
-        mapper::{
-            cifar10::Cifar10Mapper, cifar100::Cifar100Mapper, fashionmnist::FashionMnistMapper,
-            food101::Food101Mapper, imagenet1k::ImageNet1kMapper, mnist::MnistMapper,
-            tinyimagenet::TinyImageNetMapper,
-        },
+        batch::cifar100::Cifar100Batcher, dataset::LazyDataset,
         strategy::buffered::BufferedBatchStrategy,
     },
-    models::spectre_vit::{SpectreViT as Model, SpectreViTConfig},
+    metrics::MetricsHandler,
+    models::ModelConfig,
 };
 
-//type Dataset = FashionMnistDataset;
-//type Batcher = FashionMnistBatcher;
-//type Mapper = FashionMnistMapper;
-
-//type Dataset = TinyImageNetDataset;
-//type Batcher = TinyImageNetBatcher;
-//type Mapper = TinyImageNetMapper;
-
-//type Dataset = Food101Dataset;
-//type Batcher = Food101Batcher;
-//type Mapper = Food101Mapper;
-
-type Dataset = Cifar100Dataset;
 type Batcher = Cifar100Batcher;
-type Mapper = Cifar100Mapper;
 
-//type Dataset = Cifar10Dataset;
-//type Batcher = Cifar10Batcher;
-//type Mapper = Cifar10Mapper;
-
-//type Dataset = ImageNet1kDataset;
-//type Batcher = ImageNet1kBatcher;
-//type Mapper = ImageNet1kMapper;
-
-impl<B: Backend> Model<B> {
-    pub fn forward_classification(
-        &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 1, Int>,
-    ) -> ClassificationOutput<B> {
-        let output = self.forward(images);
-        let loss = CrossEntropyLossConfig::new()
-            .init(&output.device())
-            .forward(output.clone(), targets.clone());
-
-        ClassificationOutput::new(loss, output, targets)
-    }
-}
-
-impl<B: AutodiffBackend> TrainStep for Model<B> {
-    type Input = Batch<B>;
-    type Output = ClassificationOutput<B>;
-
-    fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let item = self.forward_classification(batch.images, batch.targets);
-
-        TrainOutput::new(self, item.loss.backward(), item)
-    }
-}
-
-impl<B: Backend> InferenceStep for Model<B> {
-    type Input = Batch<B>;
-    type Output = ClassificationOutput<B>;
-
-    fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
-        self.forward_classification(batch.images, batch.targets)
-    }
-}
-
-pub fn train<B: AutodiffBackend>(
+pub fn train<B: Backend>(
     artifact_dir: &String,
-    data_dir: &str,
     config: Config,
     device: B::Device,
-    model: SpectreViTConfig,
+    model: impl ModelConfig<B>,
+    dataset: impl LazyDataset,
     optimizer: AdamWConfig,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
@@ -135,120 +53,223 @@ pub fn train<B: AutodiffBackend>(
 
     B::seed(&device, config.random_seed as u64);
 
-    let ds = Dataset::new(data_dir, LazyFiletype::Arrow);
     let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
         config.batch_size as usize,
         config.batch_size as usize,
         config.num_workers as usize,
-    ); //.with_mapper(Mapper::decoder());
+    );
 
-    let normalize = Box::new(Normalize::<B>::new(
-        config.std.clone(),
-        config.mean.clone(),
-        &device,
+    let normalize = Box::new(Normalize::<Autodiff<B>>::new(
+        config.clone().std,
+        config.clone().mean,
+        &device.clone(),
     ));
-    let normalize_val = Box::new(Normalize::<B::InnerBackend>::new(
-        config.std,
-        config.mean,
-        &device,
+    let normalize_val = Box::new(Normalize::<B>::new(
+        config.clone().std,
+        config.clone().mean,
+        &device.clone(),
     ));
-    let random_flip_hor = Box::new(RandomFlip::<B>::new(0.5, Orientation::Horizontal));
-    let random_flip_ver = Box::new(RandomFlip::<B>::new(0.5, Orientation::Vertical));
-    let random_affine = Box::new(RandomAffine::<B>::new(0.5, 30.0));
-    let color_jitter = Box::new(ColorJitter::<B>::new(0.4, 0.4, 0.1, &device));
-    let random_gray = Box::new(RandomGrayscale::<B>::new(0.5, &device));
+    let mut pipeline_train = AugmentationBuilder::new(device.clone()).build_from_config(&config);
+    // Dirty hack to avoid adding normalization into augmentation pipeline. It will be added later
+    pipeline_train = pipeline_train.prepend(vec![normalize]);
+    let pipeline_val = Pipeline::<B>::new(vec![normalize_val]);
 
-    let transforms_train: Vec<Box<dyn Augmentation<B>>> = vec![
-        random_flip_hor,
-        color_jitter,
-        //random_gray,
-        random_affine,
-        random_flip_ver,
-        normalize,
-    ]; //, color_jitter, random_flip_hor, random_flip_ver];
-    let pipeline_train = Pipeline::new(transforms_train);
-
-    let transforms_val: Vec<Box<dyn Augmentation<B::InnerBackend>>> = vec![normalize_val];
-    let pipeline_val = Pipeline::<B::InnerBackend>::new(transforms_val);
-
-    //let dataloader_train = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
-    //    .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
-    //    .with_transforms(Arc::new(pipeline_train))
-    //    .with_device(device.clone())
-    //    .build(ds.train());
-    //let dataloader_val = StreamingDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
-    //    .with_strategy(strategy)
-    //    .with_transforms(Arc::new(pipeline_val))
-    //    .with_device(device.clone())
-    //    .build(ds.validation());
-
-    let dataloader_train = InMemoryDataLoaderBuilder::<B>::new(batcher.clone())
+    let dataloader_train = StreamingDataLoaderBuilder::<Autodiff<B>>::new(batcher.clone())
+        .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
-        .with_num_workers(config.num_workers as usize)
-        .with_batch_size(config.batch_size as usize)
-        .build(ds.train());
-    let dataloader_val = InMemoryDataLoaderBuilder::<B::InnerBackend>::new(batcher.clone())
+        .build(dataset.train());
+    let dataloader_val = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
+        .with_strategy(strategy)
         .with_transforms(Arc::new(pipeline_val))
-        .with_num_workers(config.num_workers as usize)
-        .with_batch_size(config.batch_size as usize)
         .with_device(device.clone())
-        .build(ds.validation());
+        .build(dataset.validation());
 
-    let accuracy_metric = AccuracyMetric::new();
-    let top5accuracy = TopKAccuracyMetric::new(5);
+    //let dataloader_train = InMemoryDataLoaderBuilder::<Autodiff<B>>::new(batcher.clone())
+    //    .with_transforms(Arc::new(pipeline_train))
+    //    .with_device(device.clone())
+    //    .with_num_workers(config.num_workers as usize)
+    //    .with_batch_size(config.batch_size as usize)
+    //    .build(dataset.train());
+    //let dataloader_val = InMemoryDataLoaderBuilder::<B>::new(batcher.clone())
+    //    .with_transforms(Arc::new(pipeline_val))
+    //    .with_num_workers(config.num_workers as usize)
+    //    .with_batch_size(config.batch_size as usize)
+    //    .with_device(device.clone())
+    //    .build(dataset.validation());
+
     let recorder = DefaultRecorder::new();
-    let learner = SupervisedTraining::new(artifact_dir, dataloader_train.clone(), dataloader_val)
-        .metrics((
-            accuracy_metric.clone(),
-            LossMetric::new(),
-            top5accuracy,
-            CpuTemperature::new(),
-            LearningRateMetric::new(),
-            CpuMemory::new(),
-        ))
-        .with_file_checkpointer(recorder.clone())
-        .num_epochs(config.epochs as usize)
-        .early_stopping(MetricEarlyStoppingStrategy::new(
-            &accuracy_metric,
-            burn::train::metric::store::Aggregate::Mean,
-            burn::train::metric::store::Direction::Highest,
-            burn::train::metric::store::Split::Valid,
-            StoppingCondition::NoImprovementSince { n_epochs: 10 },
-        ))
-        .summary();
+    let num_items = dataloader_train.num_items();
 
-    let mut model = model.init::<B>(&device);
+    let mut model = model.init_training(&device);
     let mut optimizer = optimizer.init();
     let mut scheduler = CosineAnnealingLrSchedulerConfig::new(
         config.learning_rate,
-        config.epochs as usize * (dataloader_train.num_items() / config.batch_size as usize),
+        config.epochs as usize * (num_items / config.batch_size as usize),
     )
     .init()
     .unwrap();
 
-    if config.continue_training {
-        let epoch = config.resume_epoch;
-        let model_path = format!("{artifact_dir}/model-{epoch}.mpk");
-        let optimizer_path = format!("{artifact_dir}/optim-{epoch}.mpk");
-        let scheduler_path = format!("{artifact_dir}/scheduler-{epoch}.mpk");
-        model = model.load_file(model_path, &recorder, &device).unwrap();
-        optimizer = optimizer.load_record(recorder.load(optimizer_path.into(), &device).unwrap());
-        scheduler = scheduler.load_record::<B>(
-            <NamedMpkFileRecorder<FullPrecisionSettings> as Recorder<B>>::load::<usize>(
-                &recorder,
-                scheduler_path.into(),
-                &device,
-            )
-            .unwrap(),
-        );
+    let mut train_metrics = MetricsHandler::<Autodiff<B>>::new()
+        .add(LossMetric::new(), |o| LossInput::new(o.loss()))
+        .add(AccuracyMetric::new(), |o| {
+            AccuracyInput::new(o.output(), o.targets())
+        })
+        .add(TopKAccuracyMetric::new(5), |o| {
+            TopKAccuracyInput::new(o.output(), o.targets())
+        });
+    let mut valid_metrics = MetricsHandler::<B>::new()
+        .add(LossMetric::new(), |o| LossInput::new(o.loss()))
+        .add(AccuracyMetric::new(), |o| {
+            AccuracyInput::new(o.output(), o.targets())
+        })
+        .add(TopKAccuracyMetric::new(5), |o| {
+            TopKAccuracyInput::new(o.output(), o.targets())
+        });
+
+    let num_iterations = dataloader_train.num_items() / config.batch_size as usize;
+    let mut stop_flag = false;
+    let mut logger = FileMetricLogger::new(artifact_dir);
+    for definition in train_metrics.definitions() {
+        logger.log_metric_definition(definition.clone());
     }
 
-    let result = learner.launch(Learner::new(model, optimizer, scheduler));
+    let interrupter = Interrupter::new();
+    let mut renderer = TuiMetricsRendererWrapper::new(interrupter.clone(), None);
+    valid_metrics.register(&mut renderer);
+    train_metrics.register(&mut renderer);
 
-    result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &recorder)
-        .expect("Trained model should be saved successfully");
+    for epoch in 1..=config.epochs {
+        let global_progress = Progress {
+            items_processed: epoch as usize,
+            items_total: config.epochs as usize,
+        };
+
+        let mut lr = 0.0;
+        for (iteration, batch) in dataloader_train.iter().enumerate() {
+            if interrupter.should_stop() {
+                stop_flag = true;
+                break;
+            }
+
+            let progress = Progress {
+                items_processed: iteration + 1,
+                items_total: num_iterations,
+            };
+
+            let step_output = model.step(batch);
+            let output = step_output.item;
+            let grads = step_output.grads;
+
+            lr = scheduler.step();
+            model = optimizer.step(lr, model, grads);
+
+            // Update metrics
+            let metrics_metadata = MetricMetadata {
+                progress: progress.clone(),
+                global_progress: global_progress.clone(),
+                iteration: Some(iteration),
+                lr: Some(lr),
+            };
+
+            train_metrics.update_train(
+                &output,
+                &metrics_metadata,
+                &mut renderer,
+                &mut logger,
+                epoch as usize,
+            );
+            train_metrics.render_train(
+                &mut renderer,
+                &progress,
+                &global_progress,
+                iteration,
+                epoch,
+            );
+        }
+
+        let model_valid = model.valid();
+        let num_val_iterations = dataloader_val.num_items() / config.batch_size as usize;
+
+        for (iteration, batch) in dataloader_val.iter().enumerate() {
+            if interrupter.should_stop() {
+                stop_flag = true;
+                break;
+            }
+
+            let progress = Progress {
+                items_processed: iteration + 1,
+                items_total: num_val_iterations,
+            };
+
+            let step_output = model_valid.step(batch);
+            let output = step_output;
+
+            let metrics_metadata = MetricMetadata {
+                progress: progress.clone(),
+                global_progress: global_progress.clone(),
+                iteration: Some(iteration),
+                lr: Some(lr),
+            };
+
+            valid_metrics.update_valid(
+                &output,
+                &metrics_metadata,
+                &mut renderer,
+                &mut logger,
+                epoch as usize,
+            );
+            valid_metrics.render_valid(
+                &mut renderer,
+                &progress,
+                &global_progress,
+                iteration,
+                epoch,
+            );
+        }
+
+        model
+            .clone()
+            .save_file(format!("{artifact_dir}/model-epoch-{epoch}"), &recorder)
+            .expect("Checkpoint save failed");
+
+        <DefaultRecorder as Recorder<Autodiff<B>>>::record(
+            &recorder,
+            optimizer.to_record(),
+            format!("{artifact_dir}/optim-epoch-{epoch}").into(),
+        )
+        .ok();
+
+        <DefaultRecorder as Recorder<B>>::record(
+            &recorder,
+            scheduler.to_record::<B>(),
+            format!("{artifact_dir}/scheduler-epoch-{epoch}").into(),
+        )
+        .ok();
+
+        logger.log_epoch_summary(EpochSummary {
+            epoch_number: epoch as usize,
+            split: Split::Train,
+        });
+        logger.log_epoch_summary(EpochSummary {
+            epoch_number: epoch as usize,
+            split: Split::Valid,
+        });
+
+        if stop_flag {
+            interrupter.stop(Some("Training finished"));
+            break;
+        }
+    }
+
+    // If we don't do that, renderer won't allow stdout to pass
+    drop(renderer);
+
+    let metric_names = train_metrics.metric_names();
+    println!("{}", model);
+    match LearnerSummary::new(artifact_dir, &metric_names) {
+        Ok(summary) => eprintln!("{}", summary),
+        Err(e) => eprintln!("Summary unavailable: {}", e),
+    }
 }

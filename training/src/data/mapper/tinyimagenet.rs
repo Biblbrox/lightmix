@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use image::{ImageReader, imageops::FilterType};
+use image::ImageReader;
 use polars::prelude::*;
 
 use crate::data::mapper::FrameMapper;

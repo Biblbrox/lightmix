@@ -13,8 +13,6 @@ pub struct DerfBenchmark<B: Backend> {
     num_tokens: usize,
     embed_dim: usize,
     normalized_shape: usize,
-    alpha_init_value: f32,
-    shift_init_value: f32,
     pub device: B::Device,
 }
 
@@ -29,12 +27,7 @@ impl<B: Backend> Benchmark for DerfBenchmark<B> {
                 Distribution::Default,
                 &self.device,
             ),
-            DynamicERFConfig::new(
-                self.normalized_shape,
-                self.alpha_init_value,
-                self.shift_init_value,
-            )
-            .init(&self.device),
+            DynamicERFConfig::new(self.normalized_shape).init(&self.device),
         )
     }
 
@@ -107,14 +100,16 @@ mod tests {
     };
 
     use crate::{
-        benchmarks::norm::{DerfBenchmark, LayerNormBenchmark},
+        benchmarks::{
+            GpuAutodiffBackend, GpuBackend, GpuDevice,
+            norm::{DerfBenchmark, LayerNormBenchmark},
+        },
         utils::print_bench_results,
     };
 
     #[test]
     fn norm_bench() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
+        let device = GpuDevice::default();
 
         let batches = [8; 5];
         let embed_dim = [64, 128, 256, 512, 1024];
@@ -122,11 +117,12 @@ mod tests {
 
         let mut erf_results: Vec<(u32, BenchmarkComputations)> = Vec::new();
         let mut layer_norm_results: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut erf_results_autodiff: Vec<(u32, BenchmarkComputations)> = Vec::new();
+        let mut layer_norm_results_autodiff: Vec<(u32, BenchmarkComputations)> = Vec::new();
         for embed in embed_dim.into_iter() {
-            let erf_bench = DerfBenchmark::<B> {
+            // Validation results
+            let erf_bench = DerfBenchmark::<GpuBackend> {
                 normalized_shape: embed,
-                alpha_init_value: 0.5,
-                shift_init_value: 0.0,
                 batch_size: batches[0],
                 embed_dim: embed,
                 num_tokens: num_tokens[0],
@@ -137,7 +133,21 @@ mod tests {
             let computed = BenchmarkComputations::new(&bench_res);
             erf_results.push((embed as u32, computed));
 
-            let layer_norm_bench = LayerNormBenchmark::<B> {
+            // Autodiff results
+            let erf_bench = DerfBenchmark::<GpuAutodiffBackend> {
+                normalized_shape: embed,
+                batch_size: batches[0],
+                embed_dim: embed,
+                num_tokens: num_tokens[0],
+                device: device.clone(),
+            };
+
+            let bench_res = erf_bench.run(TimingMethod::Device).unwrap();
+            let computed = BenchmarkComputations::new(&bench_res);
+            erf_results_autodiff.push((embed as u32, computed));
+
+            // Validation results
+            let layer_norm_bench = LayerNormBenchmark::<GpuBackend> {
                 normalized_shape: embed,
                 batch_size: batches[0],
                 embed_dim: embed,
@@ -148,9 +158,28 @@ mod tests {
             let bench_res = layer_norm_bench.run(TimingMethod::Device).unwrap();
             let computed = BenchmarkComputations::new(&bench_res);
             layer_norm_results.push((embed as u32, computed));
+
+            // Autodiff results
+            let layer_norm_bench = LayerNormBenchmark::<GpuAutodiffBackend> {
+                normalized_shape: embed,
+                batch_size: batches[0],
+                embed_dim: embed,
+                num_tokens: num_tokens[0],
+                device: device.clone(),
+            };
+
+            let bench_res = layer_norm_bench.run(TimingMethod::Device).unwrap();
+            let computed = BenchmarkComputations::new(&bench_res);
+            layer_norm_results_autodiff.push((embed as u32, computed));
         }
 
         print_bench_results("ERF", &erf_results, "embed_dim");
         print_bench_results("LayerNorm", &layer_norm_results, "embed_dim");
+        print_bench_results("ERF (Autodiff)", &erf_results_autodiff, "embed_dim");
+        print_bench_results(
+            "LayerNorm (Autodiff)",
+            &layer_norm_results_autodiff,
+            "embed_dim",
+        );
     }
 }

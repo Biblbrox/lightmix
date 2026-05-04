@@ -2,10 +2,11 @@ use burn::backend::Autodiff;
 
 //pub mod kernels;
 pub mod data;
+pub mod embeddings;
+pub mod fast_vit;
 pub mod mixing;
 pub mod models;
 pub mod norm;
-pub mod spectre_vit;
 
 pub type GpuBackend = burn::backend::cuda::Cuda;
 pub type GpuAutodiffBackend = Autodiff<GpuBackend>;
