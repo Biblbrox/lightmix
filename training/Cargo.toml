@@ -4,19 +4,18 @@ version = "0.0.2"
 edition = "2024"
 
 [dependencies]
-burn = { version = "0.21.0-pre.4", features = [
-    "cuda",
+burn = { version = "0.21.0", features = [
     "fusion",
     "std",
+    "cuda",
     "train",
     "tui",
-    "vulkan",
-    "ndarray",
-    #"autotune",
-    # "x86-v4",
+    "flex",
 ] }
 simplelog = "0.12.2"
-burn-cuda = "0.21.0-pre.4"
+burn-fusion = "0.21.0"
+burn-cubecl-fusion = "0.21.0"
+burn-cuda = "0.21.0"
 polars = { version = "0.53.0", features = [
     "async",
     "dtype-struct",
@@ -29,13 +28,45 @@ polars = { version = "0.53.0", features = [
 ] }
 toml = "1.1.2+spec-1.1.0"
 walkdir = "2.5.0"
-cubecl = { version = "0.10.0-pre.4", features = ["wgpu", "cuda"] }
+# cubecl = { version = "0.10.0", features = ["cuda"] }
+cubecl = { git = "https://github.com/tracel-ai/cubecl.git", features = [
+    "cuda",
+] }
+nalgebra = { version = "0.34.2", features = ["std"] }
 image = "0.25.10"
-burn-cubecl = "0.21.0-pre.4"
+burn-cubecl = "0.21.0"
 indicatif = "0.18.4"
 tikv-jemallocator = "0.6.1"
-burn-vision = "0.21.0-pre.4"
+burn-vision = "0.21.0"
 rand = "0.10.1"
 serde = "1.0.228"
 log = "0.4.29"
 rand_distr = "0.6.0"
+
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "embeddings"
+harness = false
+
+[[bench]]
+name = "encoders"
+harness = false
+
+[[bench]]
+name = "mixing"
+harness = false
+
+[[bench]]
+name = "linear"
+harness = false
+
+[[bench]]
+name = "models"
+harness = false
+
+[[bench]]
+name = "norm"
+harness = false

@@ -1,8 +1,7 @@
 use burn::{
     config::Config,
     module::Module,
-    prelude::Backend,
-    tensor::{Shape, Tensor, TensorData},
+    tensor::{Shape, Tensor, TensorData, backend::Backend},
 };
 
 use crate::spectre::transform::build_dct_projection;

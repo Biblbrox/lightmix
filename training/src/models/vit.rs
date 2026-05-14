@@ -1,13 +1,18 @@
 use burn::{
+    Tensor,
     backend::Autodiff,
+    config::Config,
     module::Module,
     nn::{
         LayerNorm, LayerNormConfig, Linear, LinearConfig,
         loss::CrossEntropyLossConfig,
         transformer::{TransformerEncoder, TransformerEncoderConfig, TransformerEncoderInput},
     },
-    prelude::*,
-    tensor::backend::AutodiffBackend,
+    tensor::{
+        Int,
+        backend::{AutodiffBackend, Backend},
+        s,
+    },
     train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
 
@@ -31,6 +36,7 @@ pub struct ViT<B: Backend> {
 pub struct ViTConfig {
     in_channels: usize,
     embed_dim: usize,
+    hidden_dim: usize,
     num_heads: usize,
     num_layers: usize,
     num_classes: usize,
@@ -51,7 +57,8 @@ impl<B: Backend> ViT<B> {
 
 impl ViTConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ViT<B> {
-        let num_patches = self.patch_size.pow(2);
+        let grid_size = self.image_size / self.patch_size;
+        let num_patches = grid_size.pow(2);
         ViT {
             embedding_block: PatchEmbeddingConfig::new(
                 self.in_channels,
@@ -65,7 +72,7 @@ impl ViTConfig {
             .init(device),
             encoder: TransformerEncoderConfig::new(
                 self.embed_dim,
-                self.embed_dim,
+                self.hidden_dim,
                 self.num_heads,
                 self.num_layers,
             )
@@ -128,6 +135,7 @@ impl<B: Backend> InferenceStep for ViT<B> {
 
 #[cfg(test)]
 mod tests {
+    use burn::tensor::Shape;
     use burn_cuda::Cuda;
 
     use crate::tokenization::vit::PatcherConfig;
@@ -140,6 +148,7 @@ mod tests {
     const IMG_SIZE: usize = 32;
     const NUM_PATCHES: usize = (IMG_SIZE / PATCH_SIZE).pow(2); // 64
     const EMBED_DIM: usize = PATCH_SIZE.pow(2) * 1;
+    const HID_DIM: usize = 64;
     const NUM_HEADS: usize = 8;
     const NUM_ENCODERS: usize = 4;
     const NUM_CLASSES: usize = 10;
@@ -206,6 +215,7 @@ mod tests {
         let model = ViTConfig::new(
             NUM_CHANNELS,
             EMBED_DIM,
+            HID_DIM,
             NUM_HEADS,
             NUM_ENCODERS,
             NUM_CLASSES,

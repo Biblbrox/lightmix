@@ -1,74 +1,40 @@
-pub mod backward;
-pub mod forward;
-pub mod hadamard;
-pub mod kernel;
+use burn::{Tensor, tensor::backend::Backend};
 
-use burn::tensor::{Tensor, TensorData, TensorPrimitive, activation, ops::FloatTensor};
+// For now, now backwards... I'm working on it
+//pub mod backward;
+// CubeCL API is very unstble.. Uff..
+//pub mod launch;
+pub mod monarch;
 
-/// We create our own Backend trait that extends the Burn backend trait.
-pub trait Backend: burn::tensor::backend::Backend {
-    fn fused_matmul_add_relu(
-        lhs: FloatTensor<Self>,
-        rhs: FloatTensor<Self>,
-        bias: FloatTensor<Self>,
-    ) -> FloatTensor<Self>;
-
-    fn hadamard_transform_inner(data: FloatTensor<Self>) -> FloatTensor<Self>;
-}
-
-/// We create our own AutodiffBackend trait that extends the Burn autodiff backend trait.
-pub trait AutodiffBackend: Backend + burn::tensor::backend::AutodiffBackend {}
-
-/// We define our custom implementation using the added function on our custom backend.
-pub fn matmul_add_relu_custom<B: Backend>(
-    lhs: Tensor<B, 3>,
-    rhs: Tensor<B, 3>,
-    bias: Tensor<B, 3>,
+pub fn monarch_fused_reference<B: Backend>(
+    x: Tensor<B, 3>,
+    left: Tensor<B, 3>,
+    right: Tensor<B, 3>,
+    a: usize,
+    b: usize,
+    bias: Option<Tensor<B, 3>>,
 ) -> Tensor<B, 3> {
-    let output = B::fused_matmul_add_relu(
-        lhs.into_primitive().tensor(),
-        rhs.into_primitive().tensor(),
-        bias.into_primitive().tensor(),
-    );
+    let [batch, n, _] = x.dims();
 
-    Tensor::from_primitive(TensorPrimitive::Float(output))
-}
+    // [B,N,a*b] -> [BN,a,b] -> [a,b,BN]
+    let x = x.reshape([-1, a as i32, b as i32]).permute([1, 2, 0]); // [a, b, BN]
 
-pub fn hadamard_transform<B: Backend>(data: Tensor<B, 1>) -> Tensor<B, 1> {
-    let output = B::hadamard_transform_inner(data.into_primitive().tensor());
+    // Left: [a,c,b] @ [a,b,BN] -> [a,c,BN]
+    let x = left.matmul(x); // [a, c, BN]
 
-    Tensor::from_primitive(TensorPrimitive::Float(output))
-}
+    // Transpose block structure: [a,c,BN] -> [c,a,BN]
+    let x = x.swap_dims(0, 1); // [c, a, BN]
 
-/// We define a reference implementation using basic tensor operations.
-pub fn matmul_add_relu_reference<B: Backend>(
-    lhs: Tensor<B, 3>,
-    rhs: Tensor<B, 3>,
-    bias: Tensor<B, 3>,
-) -> Tensor<B, 3> {
-    let x = lhs.matmul(rhs) + bias;
+    // Right: [c,d,a] @ [c,a,BN] -> [c,d,BN]
+    let x = right.matmul(x); // [c, d, BN]
 
-    activation::relu(x)
-}
+    // [c,d,BN] -> [BN,c,d] -> [B,N,out_features]
+    let x = x
+        .permute([2, 0, 1]) // [BN, c, d]
+        .reshape([batch as i32, n as i32, -1]);
 
-/// Reference hadamard transform implementation from https://github.com/edugzlez/fwht/blob/master/src/core.rs
-pub fn hadamard_transform_reference<B: Backend>(data: &mut Tensor<B, 1>) -> Tensor<B, 1> {
-    let n = data.shape().dims[0];
-
-    let mut h = 1;
-    let mut out: Vec<f32> = vec![0.0; n];
-    let data_native = data.clone().into_data();
-    while h < n {
-        for i in (0..n).step_by(h * 2) {
-            for j in i..i + h {
-                let x = data_native.clone().as_slice::<f32>().unwrap()[j];
-                let y = data_native.clone().as_slice::<f32>().unwrap()[j + h];
-                out[j] = x + y;
-                out[j + h] = x - y;
-            }
-        }
-        h *= 2;
+    match bias {
+        Some(bias) => x + bias,
+        None => x,
     }
-
-    Tensor::<B, 1>::from_data(TensorData::new(out, [n]), &data.device())
 }

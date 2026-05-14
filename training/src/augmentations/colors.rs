@@ -2,9 +2,9 @@ use std::marker::PhantomData;
 
 use burn::{
     Tensor,
-    prelude::Backend,
-    tensor::{Shape, TensorPrimitive, ops::ConvOptions},
+    tensor::{Shape, TensorPrimitive, backend::Backend, ops::ConvOptions},
 };
+
 use rand::RngExt;
 
 use crate::augmentations::Augmentation;

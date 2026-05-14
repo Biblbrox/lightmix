@@ -3,9 +3,10 @@ use burn::{
     config::Config,
     data::{dataloader::batcher::Batcher, dataset::vision::MnistItem},
     module::Module,
-    prelude::Backend,
     record::{CompactRecorder, Recorder},
 };
+
+use crate::kernels::Backend;
 
 use crate::training::TrainingConfig;
 

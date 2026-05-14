@@ -6,9 +6,10 @@ use burn::{
         Dropout, DropoutConfig, Gelu, Linear, LinearConfig,
         conv::{Conv1d, Conv1dConfig},
     },
-    prelude::Backend,
     tensor::{Distribution, Int, activation::softmax},
 };
+
+use crate::kernels::Backend;
 
 use crate::{
     norm::{DynamicERF, DynamicERFConfig},

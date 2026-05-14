@@ -2,7 +2,7 @@ use burn::{
     Tensor,
     config::Config,
     module::{Module, Param},
-    prelude::Backend,
+    tensor::backend::Backend,
 };
 
 #[derive(Module, Debug)]

@@ -1,6 +1,11 @@
 use std::f32::consts::PI;
 
-use burn::{module::Module, prelude::*};
+use burn::{
+    config::Config,
+    module::Module,
+    prelude::Tensor,
+    tensor::{Shape, TensorData, backend::Backend},
+};
 
 use crate::{
     norm::{DynamicERF, DynamicERFConfig},

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use burn::{
-    prelude::Backend,
+    tensor::backend::Backend,
     train::{
         ClassificationOutput,
         metric::{

@@ -1,109 +1,151 @@
 import argparse
 import io
+import random
+import struct
 from os import mkdir
 from os.path import exists, isfile
 from pathlib import Path
+from typing import Callable
 
 import polars as pl
 from PIL import Image
 from PIL.Image import Resampling
 
+
+def _sample_and_pack(points: list, num_points: int, num_channels: int) -> bytes:
+    if len(points) >= num_points:
+        selected = random.sample(points, num_points)
+    else:
+        selected = points + random.choices(points, k=num_points - len(points))
+    flat = [f for pt in selected for f in list(pt)]  # list(pt) unwraps inner Series
+    return struct.pack(f"{len(flat)}f", *flat)
+
+
+def make_image_decoder(size, crop, channels) -> Callable[[bytes], bytes]:
+    def decode(raw: bytes) -> bytes:
+        img = Image.open(io.BytesIO(raw))
+        if size:
+            img = img.resize(size, Resampling.BICUBIC)
+        if crop:
+            img = img.crop(crop)
+        if channels == 3 and img.mode != "RGB":
+            img = img.convert("RGB")
+        elif channels == 1 and img.mode != "L":
+            img = img.convert("L")
+        raw_bytes = img.tobytes()
+        expected = img.width * img.height * len(img.getbands())
+        if len(raw_bytes) != expected:
+            raise ValueError(f"Corrupted image: got {len(raw_bytes)}, expected {expected}")
+        return raw_bytes
+
+    return decode
+
+
+def make_pointcloud_decoder(num_points: int, num_channels: int) -> tuple[Callable, Callable]:
+    bytes_per_point = num_channels * 4
+
+    def decode_from_bytes(raw: bytes) -> bytes:
+        total_points = len(raw) // bytes_per_point
+        all_floats = struct.unpack(f"{total_points * num_channels}f", raw)
+        points = [
+            all_floats[i * num_channels : (i + 1) * num_channels] for i in range(total_points)
+        ]
+        return _sample_and_pack(points, num_points, num_channels)
+
+    def decode_from_list(points) -> bytes:
+        return _sample_and_pack(list(points), num_points, num_channels)
+
+    return decode_from_bytes, decode_from_list
+
+
+# Each spec now carries:
+#   decode_fn  – called on the raw column bytes; returns bytes
+#   unnest     – True when the parquet column is a {bytes, path} struct
 DATASET_SPECS = {
     "imagenet1k": {
         "labelcol": "label",
-        "imagecol": "image",
-        "size": (256, 256),
-        "crop": (16, 16, 240, 240),
-        "channels": 3,
+        "datacol": "image",
+        "unnest": True,
+        "decode_fn": make_image_decoder((256, 256), (16, 16, 240, 240), 3),
     },
     "tinyimagenet": {
         "labelcol": "label",
-        "imagecol": "image",
-        "size": (64, 64),
-        "crop": None,
-        "channels": 3,
-    },  # Broken
+        "datacol": "image",
+        "unnest": True,
+        "decode_fn": make_image_decoder((64, 64), None, 3),
+    },
     "cifar100": {
         "labelcol": "fine_label",
-        "imagecol": "img",
-        "size": None,
-        "crop": None,
-        "channels": 3,
+        "datacol": "img",
+        "unnest": True,
+        "decode_fn": make_image_decoder(None, None, 3),
     },
     "cifar10": {
         "labelcol": "label",
-        "imagecol": "img",
-        "size": None,
-        "crop": None,
-        "channels": 3,
+        "datacol": "img",
+        "unnest": True,
+        "decode_fn": make_image_decoder(None, None, 3),
     },
     "mnist": {
         "labelcol": "label",
-        "imagecol": "image",
-        "size": None,
-        "crop": None,
-        "channels": 1,
+        "datacol": "image",
+        "unnest": True,
+        "decode_fn": make_image_decoder(None, None, 1),
     },
     "fashionmnist": {
         "labelcol": "label",
-        "imagecol": "image",
-        "size": None,
-        "crop": None,
-        "channels": 1,
+        "datacol": "image",
+        "unnest": True,
+        "decode_fn": make_image_decoder(None, None, 1),
     },
     "food101": {
         "labelcol": "label",
-        "imagecol": "image",
-        "size": (96, 96),
-        "crop": None,
-        "channels": 3,
+        "datacol": "image",
+        "unnest": True,
+        "decode_fn": make_image_decoder((96, 96), None, 3),
+    },
+    "modelnet40": {
+        "labelcol": "label",
+        "datacol": "inputs",
+        "unnest": False,
+        "input_dtype": pl.List(pl.List(pl.Float32)),
+        "decode_fn": make_pointcloud_decoder(num_points=1024, num_channels=3),
     },
 }
 
 
-def decode(raw: bytes, spec: dict) -> bytes:
-    img = Image.open(io.BytesIO(raw))
-    if spec["size"]:
-        img = img.resize(spec["size"], Resampling.BICUBIC)
-    if spec["crop"]:
-        img = img.crop(spec["crop"])
-    if spec["channels"] == 3 and img.mode != "RGB":
-        img = img.convert("RGB")
-    elif spec["channels"] == 1 and img.mode != "L":
-        img = img.convert("L")
-
-    raw_bytes = img.tobytes()
-
-    expected = img.width * img.height * len(img.getbands())
-    if len(raw_bytes) != expected:
-        raise ValueError(f"Corrupted image: got {len(raw_bytes)}, expected {expected}")
-
-    return raw_bytes
-
-
-def write_arrow(parquet_path: Path, out_path: Path, dataset):
+def write_arrow(parquet_path: Path, out_path: Path, dataset: str):
     spec = DATASET_SPECS[dataset]
     batch_size = 128
-    arrow_path = out_path.joinpath(f"{parquet_path.stem}.arrow")
+    arrow_path = out_path / f"{parquet_path.stem}.arrow"
 
-    image_col: str = DATASET_SPECS[dataset]["imagecol"]
     df = pl.scan_parquet(parquet_path)
     try:
         schema = df.collect_schema()
+        print(schema)
     except pl.exceptions.ComputeError:
         print(f"Unable to find files with glob: {parquet_path}. Skipping")
         return
-    df = df.unnest(image_col).drop("path").rename({"bytes": "image"})
 
-    print(schema)
-    # It would be nice to have a progress bar
-    df = df.with_columns(
-        pl.col("image").map_elements(lambda bytes: decode(bytes, spec), return_dtype=pl.Binary)
+    if spec["unnest"]:
+        df = df.unnest(spec["datacol"]).drop("path").rename({"bytes": "image"})
+    else:
+        df = df.rename({spec["datacol"]: "image"})
+
+    # Pick decoder based on actual column dtype
+    decode_fn = spec["decode_fn"]
+    col_dtype = schema[spec["datacol"]]
+    if isinstance(decode_fn, tuple):
+        # (bytes_decoder, list_decoder) — choose by dtype
+        decode_fn = decode_fn[1] if col_dtype != pl.Binary else decode_fn[0]
+
+    return_dtype = pl.Binary
+
+    df = df.with_columns(pl.col("image").map_elements(decode_fn, return_dtype=return_dtype))
+
+    df.with_columns(pl.col(["image", spec["labelcol"]]).shuffle(seed=42)).sink_ipc(
+        arrow_path, record_batch_size=batch_size
     )
-
-    df.with_columns(
-        pl.col(["image", DATASET_SPECS[dataset]["labelcol"]]).shuffle(seed=42)
-    ).sink_ipc(arrow_path, record_batch_size=batch_size)
 
 
 def convert(in_path: Path, out_path: Path, dataset):

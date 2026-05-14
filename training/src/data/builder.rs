@@ -1,4 +1,6 @@
-use burn::{data::dataloader::DataLoader, prelude::*};
+use std::sync::Arc;
+
+use burn::{data::dataloader::DataLoader, tensor::backend::Backend};
 use polars::prelude::*;
 
 use crate::{

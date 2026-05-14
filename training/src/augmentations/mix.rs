@@ -1,4 +1,7 @@
-use burn::prelude::*;
+use burn::{
+    prelude::Tensor,
+    tensor::{Int, backend::Backend},
+};
 use rand::RngExt;
 use rand_distr::{Beta, Distribution};
 

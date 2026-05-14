@@ -1,7 +1,7 @@
 use burn::{
     backend::Autodiff,
     module::{AutodiffModule, Module},
-    prelude::Backend,
+    tensor::backend::Backend,
     train::{ClassificationOutput, InferenceStep, TrainStep},
 };
 
@@ -9,8 +9,8 @@ use crate::data::batch::ImageBatch;
 
 pub mod fast_vit;
 //pub mod swin;
-pub mod parallel_vit;
-pub mod self_vit;
+//pub mod parallel_vit;
+//pub mod self_vit;
 pub mod token_to_token;
 pub mod vit;
 

@@ -1,6 +1,5 @@
 use std::{path::PathBuf, sync::Arc};
 
-use burn::prelude::Backend;
 use burn::{
     backend::Autodiff,
     data::dataloader::Progress,
@@ -8,6 +7,7 @@ use burn::{
     module::{AutodiffModule, Module},
     optim::{AdamWConfig, Optimizer},
     record::{DefaultRecorder, Recorder},
+    tensor::backend::{AutodiffBackend, Backend},
     train::{
         InferenceStep, Interrupter, LearnerSummary, TrainStep,
         logger::{FileMetricLogger, MetricLogger},
@@ -20,8 +20,10 @@ use burn::{
     },
 };
 
-use crate::augmentations::builder::AugmentationBuilder;
 use crate::data::builder::StreamingDataLoaderBuilder;
+use crate::{
+    augmentations::builder::AugmentationBuilder, data::batch::tinyimagenet::TinyImageNetBatcher,
+};
 use crate::{
     augmentations::{Pipeline, normalize::Normalize},
     config::Config,

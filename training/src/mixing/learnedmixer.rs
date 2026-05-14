@@ -2,9 +2,11 @@ use burn::{
     config::Config,
     module::{Module, Param},
     nn::{Linear, LinearConfig},
-    prelude::*,
+    prelude::Tensor,
     tensor::{Distribution, TensorData},
 };
+
+use burn::tensor::backend::Backend;
 
 #[derive(Module, Debug)]
 pub struct LearnedPermuter<B: Backend> {
@@ -48,7 +50,6 @@ impl LearnedPermuterConfig {
         use std::f32::consts::PI;
         let shift = layer_num % n;
 
-        // Build the shifted identity explicitly then factor it via rank-r DCT approximation
         let mut u_data = vec![0.0f32; n * rank];
         let mut v_data = vec![0.0f32; n * rank];
 
@@ -60,9 +61,7 @@ impl LearnedPermuterConfig {
             };
             for i in 0..n {
                 let basis = scale * (PI * k as f32 * (2 * i + 1) as f32 / (2.0 * n as f32)).cos();
-                // U column k: DCT basis vector
                 u_data[i * rank + k] = basis;
-                // V column k: same basis shifted by `shift` positions (cyclic)
                 let j = (i + shift) % n;
                 v_data[j * rank + k] = basis;
             }

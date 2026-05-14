@@ -4,8 +4,10 @@ use burn::{
     config::Config,
     module::Module,
     nn::{Linear, LinearConfig, loss::CrossEntropyLossConfig},
-    prelude::Backend,
-    tensor::{Int, backend::AutodiffBackend},
+    tensor::{
+        Int,
+        backend::{AutodiffBackend, Backend},
+    },
     train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
 
@@ -74,7 +76,6 @@ impl FastViTConfig {
                 self.num_heads,
                 self.hid_dim,
                 self.dropout,
-                "relu".to_string(),
                 self.sinkhorn_temp,
             )
             .init(device),

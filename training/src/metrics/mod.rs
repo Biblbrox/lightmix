@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use burn::Tensor;
 use burn::data::dataloader::Progress;
-use burn::prelude::Backend;
 use burn::tensor::Int;
+use burn::tensor::backend::Backend;
 use burn::train::ClassificationOutput;
 use burn::train::logger::MetricLogger;
 use burn::train::metric::store::{MetricsUpdate, NumericMetricUpdate, Split};

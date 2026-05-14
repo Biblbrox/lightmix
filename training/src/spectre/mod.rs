@@ -2,8 +2,7 @@ use burn::{
     Tensor,
     config::Config,
     module::Module,
-    prelude::Backend,
-    tensor::{ops::PadMode, s},
+    tensor::{backend::Backend, ops::PadMode, s},
 };
 
 use crate::spectre::transform::SpectralTransform;

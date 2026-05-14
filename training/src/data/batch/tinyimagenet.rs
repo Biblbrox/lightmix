@@ -1,4 +1,9 @@
-use burn::{prelude::*, tensor::DType};
+use std::sync::Arc;
+
+use burn::{
+    prelude::Tensor,
+    tensor::{DType, Int, TensorData, backend::Backend},
+};
 use polars::prelude::*;
 
 use crate::{

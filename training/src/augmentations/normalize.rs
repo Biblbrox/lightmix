@@ -1,4 +1,7 @@
-use burn::{Tensor, prelude::Backend, tensor::TensorData};
+use burn::{
+    Tensor,
+    tensor::{TensorData, backend::Backend},
+};
 
 use crate::augmentations::Augmentation;
 

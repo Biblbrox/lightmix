@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use burn::prelude::*;
+use burn::{prelude::Tensor, tensor::backend::Backend};
 
 pub mod builder;
 pub mod colors;

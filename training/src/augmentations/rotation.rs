@@ -1,7 +1,8 @@
 use core::{f32, f64};
 use std::marker::PhantomData;
 
-use burn::{Tensor, prelude::Backend};
+use burn::{Tensor, tensor::backend::Backend};
+
 use burn_vision::Transform2D;
 use rand::RngExt;
 

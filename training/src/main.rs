@@ -2,11 +2,12 @@
 
 use std::{env::current_dir, fs::File, path::PathBuf};
 
-use burn::{backend::Cuda, grad_clipping::GradientClippingConfig, optim::AdamWConfig};
+use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig};
+use burn_cuda::Cuda;
 use embed_former_train::{
     config::Config,
-    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset},
-    models::fast_vit::FastViTConfig,
+    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset, tinyimagenet::TinyImageNetDataset},
+    models::{fast_vit::FastViTConfig, vit::ViTConfig},
     training::train,
 };
 use simplelog::{LevelFilter, WriteLogger};
@@ -25,7 +26,6 @@ fn init_logger() {
 static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() {
-    //type MyBackend = Cuda<bf16, i16>;
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
     init_logger();
@@ -111,17 +111,28 @@ fn main() {
         &artifact_dir,
         config.clone(),
         device.clone(),
-        FastViTConfig::new(
+        // FastViTConfig::new(
+        //     config.in_channels as usize,
+        //     config.embed_dim as usize,
+        //     config.num_heads as usize,
+        //     config.num_encoders as usize,
+        //     config.num_classes as usize,
+        //     config.patch_size as usize,
+        //     config.img_size as usize,
+        //     config.hidden_dim as usize,
+        //     config.dropout,
+        //     config.sinkhorn_temp as f32,
+        // ),
+        ViTConfig::new(
             config.in_channels as usize,
             config.embed_dim as usize,
+            config.hidden_dim as usize,
             config.num_heads as usize,
             config.num_encoders as usize,
             config.num_classes as usize,
             config.patch_size as usize,
             config.img_size as usize,
-            config.hidden_dim as usize,
             config.dropout,
-            config.sinkhorn_temp as f32,
         ),
         Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow),
         //model_config,

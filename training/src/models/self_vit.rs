@@ -3,8 +3,10 @@ use burn::{
     config::Config,
     module::{Module, Param},
     nn::{Linear, LinearConfig},
-    prelude::Backend,
-    tensor::activation::{gelu, softmax},
+    tensor::{
+        activation::{gelu, softmax},
+        backend::Backend,
+    },
 };
 
 use crate::models::fast_vit::{FastViT, FastViTConfig};

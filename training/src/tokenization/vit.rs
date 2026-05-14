@@ -68,7 +68,8 @@ impl<B: Backend> PatchEmbedding<B> {
         let patches = self.patcher.forward(images); // [batch_size, total_patch_dim, embed_dim]
         let mut x = self.position_embeddings.val() + patches;
         if !self.cls.is_none() {
-            x = Tensor::cat(vec![self.cls.clone().unwrap().val(), x], 1);
+            let [b, _, _] = x.dims();
+            x = Tensor::cat(vec![self.cls.clone().unwrap().val().repeat_dim(0, b), x], 1);
         }
         self.dropout.forward(x)
     }

@@ -1,4 +1,4 @@
-use burn::prelude::Backend;
+use burn::tensor::backend::Backend;
 use serde::Serialize;
 
 use crate::augmentations::colors::{ColorJitter, GaussianBlur, RandomErasing, RandomGrayscale};

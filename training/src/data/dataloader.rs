@@ -9,7 +9,7 @@ use std::{
 
 use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},
-    prelude::*,
+    tensor::backend::Backend,
 };
 use polars::prelude::*;
 
@@ -94,28 +94,12 @@ where
     }
 
     fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
-        //Arc::new(StreamingDataLoader::new(
-        //    self.dataset.clone(),
-        //    self.batcher.clone(),
-        //    self.strategy.clone_dyn(),
-        //    self.transforms.clone(),
-        //    device.clone(),
-        //))
         let mut loader = self.clone();
         loader.device = device.clone();
         Arc::new(loader)
     }
 
     fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
-        //Arc::new(StreamingDataLoader::new(
-        //    self.dataset
-        //        .clone()
-        //        .slice(start as i64, (end - start) as u32),
-        //    self.batcher.clone(),
-        //    self.strategy.clone_dyn(),
-        //    self.transforms.clone(),
-        //    self.device.clone(),
-        //))
         let mut loader = self.clone();
         loader.dataset = self
             .dataset

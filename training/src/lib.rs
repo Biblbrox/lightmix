@@ -1,8 +1,11 @@
 pub mod augmentations;
+pub mod benchmarks;
 pub mod config;
 pub mod curves;
 pub mod data;
 pub mod encoders;
+pub mod kernels;
+pub mod linear;
 pub mod metrics;
 pub mod mixing;
 pub mod models;

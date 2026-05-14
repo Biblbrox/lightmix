@@ -1,7 +1,10 @@
-use burn::{Tensor, prelude::Backend, tensor::Distribution};
+use burn::{
+    Tensor,
+    tensor::{Distribution, backend::Backend},
+};
 use cubecl::benchmark::Benchmark;
 
-use crate::tokenization::vit::{PatchEmbedding, PatchEmbeddingConfig};
+use embed_former_train::tokenization::vit::{PatchEmbedding, PatchEmbeddingConfig};
 
 pub struct PatchEmbeddingBenchmark<B: Backend> {
     pub batch_size: usize,
@@ -61,46 +64,40 @@ impl<B: Backend> Benchmark for PatchEmbeddingBenchmark<B> {
     }
 }
 
-#[cfg(test)]
-mod tests {
+fn main() {
     use cubecl::{
         benchmark::{Benchmark, BenchmarkComputations},
         profile::TimingMethod,
     };
 
-    use crate::{
-        benchmarks::{GpuBackend, GpuDevice, embeddings::PatchEmbeddingBenchmark},
-        utils::print_bench_results,
-    };
+    use embed_former_train::benchmarks::utils::print_bench_results;
+    use embed_former_train::benchmarks::{GpuBackend, GpuDevice};
 
-    #[test]
-    fn patcher_bench() {
-        let device = GpuDevice::default();
+    let device = GpuDevice::default();
 
-        let batches = [8; 5];
-        let embed_dim = [64, 128, 256, 512, 1024];
-        let image_size: usize = 224;
-        let patch_size: usize = 16;
-        let in_channels = 3;
+    let batches = [8; 5];
+    let embed_dim = [64, 128, 256, 512, 1024];
+    let image_size: usize = 224;
+    let patch_size: usize = 16;
+    let in_channels = 3;
 
-        let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
-        let num_patches = (image_size / patch_size).pow(2);
-        for embed in embed_dim.into_iter() {
-            let bench = PatchEmbeddingBenchmark::<GpuBackend> {
-                batch_size: batches[0],
-                in_channels,
-                embed_dim: embed,
-                patch_size,
-                image_size,
-                seq_length: num_patches,
-                device: device.clone(),
-            };
+    let mut results: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let num_patches = (image_size / patch_size).pow(2);
+    for embed in embed_dim.into_iter() {
+        let bench = PatchEmbeddingBenchmark::<GpuBackend> {
+            batch_size: batches[0],
+            in_channels,
+            embed_dim: embed,
+            patch_size,
+            image_size,
+            seq_length: num_patches,
+            device: device.clone(),
+        };
 
-            let bench_res = bench.run(TimingMethod::System).unwrap();
-            let computed = BenchmarkComputations::new(&bench_res);
-            results.push((embed as u32, computed));
-        }
-
-        print_bench_results("Patcher", &results, "embed_dim");
+        let bench_res = bench.run(TimingMethod::System).unwrap();
+        let computed = BenchmarkComputations::new(&bench_res);
+        results.push((embed as u32, computed));
     }
+
+    print_bench_results("Patcher", &results, "embed_dim");
 }
