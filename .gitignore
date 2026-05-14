@@ -6,9 +6,11 @@ dist/
 wheels/
 *.egg-info
 uv.lock
-data/
 vit/__pycache__
 .vscode
+*.svg
+*.data
+*.data.old
 
 # Virtual environments
 .venv
@@ -27,8 +29,19 @@ token_example.png
 image_example.png
 example.png
 
+# Datasets
+datasets/*
+assets/*
+
 
 # Project files
 .cargo
 target
 Cargo.lock
+*.local.toml
+
+# Profiling & Logging
+*.ncu-rep
+*.log
+.env
+*.db

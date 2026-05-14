@@ -1,4 +1,4 @@
-## ViT inference project
+## ViT inference project                               
 ### Inference setup (Native method)
 Make sure you installed arm64 cross-compiler:
 ```

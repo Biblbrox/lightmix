@@ -1,0 +1,261 @@
+random_seed = 42
+learning_rate = 1e-3
+num_workers = 4
+cache_dir = "hf://datasets"
+continue_training = false
+resume_epoch = 1
+
+[imagenet1k]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 1000
+img_size = 224
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[tinyimagenet]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 200
+img_size = 64
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[food101]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 101
+img_size = 96
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[cifar10]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 10
+img_size = 32
+in_channels = 3
+mean = [0.4914, 0.4822, 0.4465]
+std = [0.2470, 0.2435, 0.2616]
+
+[mnist]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 28
+num_classes = 10
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+
+[cifar100]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 100
+img_size = 32
+in_channels = 3
+std = [0.2675, 0.2565, 0.2761]
+mean = [0.5071, 0.4867, 0.4408]
+
+[fashionmnist]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 28
+num_classes = 10
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+
+
+[vit_micro]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 512
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 8
+
+[vit_tiny]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 768
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+
+[vit_small]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 1536
+num_heads = 6
+embed_dim = 384
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+
+[vit_base]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 3072
+num_heads = 12
+embed_dim = 768
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+
+[vit_large]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 4096
+num_heads = 16
+embed_dim = 1024
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 24
+
+[vit_huge]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 5120
+num_heads = 16
+embed_dim = 1280
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 32
+
+
+[spectre_vit_micro]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 512
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 8
+sinkhorn_temp = 0.05
+
+
+[spectre_vit_tiny]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 768
+num_heads = 3
+embed_dim = 192
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+sinkhorn_temp = 0.05
+
+[spectre_vit_small]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 1536
+num_heads = 6
+embed_dim = 384
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+sinkhorn_temp = 0.05
+
+[spectre_vit_base]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 3072
+num_heads = 12
+embed_dim = 768
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 12
+sinkhorn_temp = 0.05
+
+[spectre_vit_large]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 4096
+num_heads = 16
+embed_dim = 1024
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 24
+sinkhorn_temp = 0.05
+
+[spectre_vit_huge]
+patch_size = 16
+dropout = 0.001
+hidden_dim = 5120
+num_heads = 16
+embed_dim = 1280
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 32
+sinkhorn_temp = 0.05
+
+
+[augmentations]
+
+[[augmentations.transforms]]
+name = "random_flip"
+probability = 0.5
+orientation = "horizontal"
+
+
+[[augmentations.transforms]]
+name = "random_flip"
+probability = 0.5
+orientation = "vertical"
+
+
+[[augmentations.transforms]]
+name = "random_affine"
+probability = 0.5
+degrees = 30.0
+
+# TODO: Color jitter has bug inside
+# [[augmentations.transforms]]
+# name = "color_jitter"
+# brightness = 0.4
+# contrast = 0.4
+# saturation = 0.1
+
+[[augmentations.transforms]]
+name = "random_erasing"
+probability = 0.5
+min_scale = 0.02
+max_scale = 0.33
+
+[[augmentations.transforms]]
+name = "gaussian_blur"
+probability = 0.5
+kernel_size = 7
+min_sigma = 0.1
+max_sigma = 2.0
+
+[[augmentations.transforms]]
+name = "random_grayscale"
+probability = 0.5
