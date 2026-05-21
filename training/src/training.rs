@@ -1,4 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use burn::{
     backend::Autodiff,
@@ -7,7 +12,7 @@ use burn::{
     module::{AutodiffModule, Module},
     optim::{AdamWConfig, Optimizer},
     record::{DefaultRecorder, Recorder},
-    tensor::backend::{AutodiffBackend, Backend},
+    tensor::backend::Backend,
     train::{
         InferenceStep, Interrupter, LearnerSummary, TrainStep,
         logger::{FileMetricLogger, MetricLogger},
@@ -19,14 +24,11 @@ use burn::{
         renderer::tui::TuiMetricsRendererWrapper,
     },
 };
+use serde::Serialize;
 
-use crate::data::builder::StreamingDataLoaderBuilder;
+use crate::config::DatasetConfig;
 use crate::{
-    augmentations::builder::AugmentationBuilder, data::batch::tinyimagenet::TinyImageNetBatcher,
-};
-use crate::{
-    augmentations::{Pipeline, normalize::Normalize},
-    config::Config,
+    augmentations::Pipeline,
     data::{
         batch::cifar100::Cifar100Batcher, dataset::LazyDataset,
         strategy::buffered::BufferedBatchStrategy,
@@ -34,51 +36,52 @@ use crate::{
     metrics::MetricsHandler,
     models::ModelConfig,
 };
+use crate::{config::SharedConfig, data::builder::StreamingDataLoaderBuilder};
+
+pub trait Saveable: Serialize {
+    fn save(&self, path: &Path) {
+        let mut file = File::create(path).unwrap();
+        let content = toml::to_string_pretty(self).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+    }
+}
+
+impl Saveable for SharedConfig {}
+impl Saveable for DatasetConfig {}
 
 type Batcher = Cifar100Batcher;
 
 pub fn train<B: Backend>(
-    artifact_dir: &String,
-    config: Config,
+    artifact_dir: &str,
+    shared: SharedConfig,
+    dataset_cfg: DatasetConfig,
     device: B::Device,
     model: impl ModelConfig<B>,
     dataset: impl LazyDataset,
+    pipeline_train: Pipeline<Autodiff<B>>,
+    pipeline_val: Pipeline<B>,
     optimizer: AdamWConfig,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
-    if !config.continue_training {
+    if !shared.continue_training {
         std::fs::remove_dir_all(artifact_dir).ok();
         std::fs::create_dir_all(artifact_dir).ok();
     }
 
-    config.save(PathBuf::from(format!("{artifact_dir}/config.json")).as_path());
+    shared.save(PathBuf::from(format!("{artifact_dir}/shared_config.json")).as_path());
+    dataset_cfg.save(PathBuf::from(format!("{artifact_dir}/dataset_config.json")).as_path());
 
-    B::seed(&device, config.random_seed as u64);
+    B::seed(&device, shared.random_seed as u64);
 
     let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
-        config.batch_size as usize,
-        config.batch_size as usize,
-        config.num_workers as usize,
+        dataset_cfg.batch_size,
+        dataset_cfg.batch_size,
+        shared.num_workers as usize,
     );
 
-    let normalize = Box::new(Normalize::<Autodiff<B>>::new(
-        config.clone().std,
-        config.clone().mean,
-        &device.clone(),
-    ));
-    let normalize_val = Box::new(Normalize::<B>::new(
-        config.clone().std,
-        config.clone().mean,
-        &device.clone(),
-    ));
-    let mut pipeline_train = AugmentationBuilder::new(device.clone()).build_from_config(&config);
-    // Dirty hack to avoid adding normalization into augmentation pipeline. It will be added later
-    pipeline_train = pipeline_train.prepend(vec![normalize]);
-    let pipeline_val = Pipeline::<B>::new(vec![normalize_val]);
-
     let dataloader_train = StreamingDataLoaderBuilder::<Autodiff<B>>::new(batcher.clone())
-        .with_strategy(strategy.clone().with_shuffle(config.random_seed as u64))
+        .with_strategy(strategy.clone().with_shuffle(shared.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
         .build(dataset.train());
@@ -88,27 +91,19 @@ pub fn train<B: Backend>(
         .with_device(device.clone())
         .build(dataset.validation());
 
-    //let dataloader_train = InMemoryDataLoaderBuilder::<Autodiff<B>>::new(batcher.clone())
-    //    .with_transforms(Arc::new(pipeline_train))
-    //    .with_device(device.clone())
-    //    .with_num_workers(config.num_workers as usize)
-    //    .with_batch_size(config.batch_size as usize)
-    //    .build(dataset.train());
-    //let dataloader_val = InMemoryDataLoaderBuilder::<B>::new(batcher.clone())
-    //    .with_transforms(Arc::new(pipeline_val))
-    //    .with_num_workers(config.num_workers as usize)
-    //    .with_batch_size(config.batch_size as usize)
-    //    .with_device(device.clone())
-    //    .build(dataset.validation());
-
     let recorder = DefaultRecorder::new();
-    let num_items = dataloader_train.num_items();
 
-    let mut model = model.init_training(&device);
+    let num_iterations = dataloader_train.num_items() / dataset_cfg.batch_size as usize;
+    let mut model = model.init_training(
+        &device,
+        dataset_cfg.in_channels,
+        dataset_cfg.img_size,
+        dataset_cfg.num_classes,
+    );
     let mut optimizer = optimizer.init();
     let mut scheduler = CosineAnnealingLrSchedulerConfig::new(
-        config.learning_rate,
-        config.epochs as usize * (num_items / config.batch_size as usize),
+        shared.learning_rate,
+        dataset_cfg.epochs * num_iterations,
     )
     .init()
     .unwrap();
@@ -130,7 +125,6 @@ pub fn train<B: Backend>(
             TopKAccuracyInput::new(o.output(), o.targets())
         });
 
-    let num_iterations = dataloader_train.num_items() / config.batch_size as usize;
     let mut stop_flag = false;
     let mut logger = FileMetricLogger::new(artifact_dir);
     for definition in train_metrics.definitions() {
@@ -142,10 +136,10 @@ pub fn train<B: Backend>(
     valid_metrics.register(&mut renderer);
     train_metrics.register(&mut renderer);
 
-    for epoch in 1..=config.epochs {
+    for epoch in 1..=dataset_cfg.epochs {
         let global_progress = Progress {
             items_processed: epoch as usize,
-            items_total: config.epochs as usize,
+            items_total: dataset_cfg.epochs as usize,
         };
 
         let mut lr = 0.0;
@@ -187,12 +181,12 @@ pub fn train<B: Backend>(
                 &progress,
                 &global_progress,
                 iteration,
-                epoch,
+                epoch as i64,
             );
         }
 
         let model_valid = model.valid();
-        let num_val_iterations = dataloader_val.num_items() / config.batch_size as usize;
+        let num_val_iterations = dataloader_val.num_items() / dataset_cfg.batch_size as usize;
 
         for (iteration, batch) in dataloader_val.iter().enumerate() {
             if interrupter.should_stop() {
@@ -227,7 +221,7 @@ pub fn train<B: Backend>(
                 &progress,
                 &global_progress,
                 iteration,
-                epoch,
+                epoch as i64,
             );
         }
 

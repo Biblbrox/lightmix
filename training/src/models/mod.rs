@@ -7,10 +7,8 @@ use burn::{
 
 use crate::data::batch::ImageBatch;
 
+pub mod efficientvit;
 pub mod fast_vit;
-//pub mod swin;
-//pub mod parallel_vit;
-//pub mod self_vit;
 pub mod token_to_token;
 pub mod vit;
 
@@ -22,6 +20,18 @@ pub trait ModelConfig<B: Backend> {
         + core::fmt::Display
         + 'static;
 
-    fn init_training(&self, device: &B::Device) -> Self::TrainModel;
-    fn init_inference(&self, device: &B::Device) -> Self::ValidModel;
+    fn init_training(
+        &self,
+        device: &B::Device,
+        in_channels: usize,
+        image_size: usize,
+        num_classes: usize,
+    ) -> Self::TrainModel;
+    fn init_inference(
+        &self,
+        device: &B::Device,
+        in_channels: usize,
+        image_size: usize,
+        num_classes: usize,
+    ) -> Self::ValidModel;
 }

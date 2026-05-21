@@ -8,6 +8,7 @@ use rand::RngExt;
 
 use crate::augmentations::Augmentation;
 
+#[derive(Debug, Clone)]
 pub struct RandomAffine<B: Backend> {
     p: f64,
     degrees: f32,
@@ -28,20 +29,25 @@ impl<B: Backend> Augmentation<B> for RandomAffine<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
         let mut rng = rand::rng();
         if rng.random_bool(self.p) {
-            let rot_mat = Transform2D::rotation(self.degrees.to_radians(), 0.0, 0.0);
+            let [_, _, h, w] = input.dims();
+            let cx = (w as f32 - 1.0) * 0.5;
+            let cy = (h as f32 - 1.0) * 0.5;
+
+            let rot_mat = Transform2D::rotation(self.degrees.to_radians(), cx, cy);
             return rot_mat.transform::<B>(input);
-        };
+        }
 
         input
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Orientation {
     Horizontal,
     Vertical,
 }
 
+#[derive(Debug, Clone)]
 pub struct RandomFlip<B: Backend> {
     p: f64,
     orientation: Orientation,
@@ -62,14 +68,10 @@ impl<B: Backend> Augmentation<B> for RandomFlip<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
         let mut rng = rand::rng();
         if rng.random_bool(self.p) {
-            match self.orientation {
-                Orientation::Vertical => {
-                    return input.flip([1]);
-                }
-                Orientation::Horizontal => {
-                    return input.flip([2]);
-                }
-            }
+            return match self.orientation {
+                Orientation::Vertical => input.flip([2]),
+                Orientation::Horizontal => input.flip([3]),
+            };
         }
         input
     }
@@ -79,10 +81,12 @@ impl<B: Backend> Augmentation<B> for RandomFlip<B> {
 mod tests {
     use super::*;
     use burn::Tensor;
-    use burn::tensor::Shape;
-    use burn_cuda::{Cuda, CudaDevice};
+    use burn::backend::Flex;
+    use burn::backend::flex::FlexDevice;
+    use burn::tensor::{Shape, Tolerance};
 
-    type B = Cuda;
+    type B = Flex;
+    type Device = FlexDevice;
 
     // ============================================================================
     // RandomFlip Tests
@@ -99,51 +103,51 @@ mod tests {
 
     #[test]
     fn test_random_flip_horizontal_preserves_shape() {
-        let device = CudaDevice::default();
         let flip = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
-        let input = Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &device)
-            .reshape([1, 2, 3, 1]);
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.]]]]);
 
         let output = flip.execute(input.clone());
-        assert_eq!(output.shape(), Shape::new([1, 2, 3, 1]));
+        assert_eq!(output.shape(), Shape::new([1, 1, 2, 3]));
+        assert_eq!(input.shape(), Shape::new([1, 1, 2, 3]));
     }
 
     #[test]
     fn test_random_flip_vertical_preserves_shape() {
-        let device = CudaDevice::default();
         let flip = RandomFlip::<B>::new(1.0, Orientation::Vertical);
-        let input = Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &device)
-            .reshape([1, 2, 3, 1]);
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.]]]]);
 
         let output = flip.execute(input.clone());
-        assert_eq!(output.shape(), Shape::new([1, 2, 3, 1]));
+        assert_eq!(output.shape(), Shape::new([1, 1, 2, 3]));
+        assert_eq!(input.shape(), Shape::new([1, 1, 2, 3]));
     }
 
     #[test]
-    fn test_random_flip_probability_one_always_flips() {
-        let device = CudaDevice::default();
-        // Run multiple times to verify flip always happens with p=1.0
+    fn test_random_flip_probability_one_always_preserves_shape() {
         let flip = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
-        let input = Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &device)
-            .reshape([2, 1, 2, 2]);
+        let input = Tensor::<B, 4>::from([[[[1., 2.], [3., 4.]]]]);
 
         let output = flip.execute(input.clone());
-
-        // Verify shape is preserved
         assert_eq!(output.shape(), input.shape());
     }
 
     #[test]
     fn test_random_flip_with_batch_images() {
-        let device = CudaDevice::default();
-        // Create a batch of 4 images, each 3x32x32 with 3 channels
-        let input = Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0], &device).reshape([1, 1, 3, 1]);
+        let flip = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
+        let input = Tensor::<B, 4>::from([
+            [
+                [[1., 2.], [3., 4.]],
+                [[5., 6.], [7., 8.]],
+                [[9., 10.], [11., 12.]],
+            ],
+            [
+                [[13., 14.], [15., 16.]],
+                [[17., 18.], [19., 20.]],
+                [[21., 22.], [23., 24.]],
+            ],
+        ]);
 
-        let flip_h = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
-        let output_h = flip_h.execute(input.clone());
-
-        // Verify dimensions are preserved
-        assert_eq!(output_h.shape(), input.shape());
+        let output = flip.execute(input.clone());
+        assert_eq!(output.shape(), input.shape());
     }
 
     // ============================================================================
@@ -160,32 +164,29 @@ mod tests {
 
     #[test]
     fn test_random_affine_preserves_shape() {
-        let device = CudaDevice::default();
         let affine = RandomAffine::<B>::new(1.0, 30.0);
-        let input =
-            Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0], &device).reshape([1, 1, 2, 2]);
+        let input = Tensor::<B, 4>::from([[[[1., 2.], [3., 4.]]]]);
 
         let output = affine.execute(input.clone());
         assert_eq!(output.shape(), Shape::new([1, 1, 2, 2]));
+        assert_eq!(input.shape(), Shape::new([1, 1, 2, 2]));
     }
 
     #[test]
     fn test_random_affine_with_batch() {
-        let device = CudaDevice::default();
         let affine = RandomAffine::<B>::new(1.0, 45.0);
-        let input =
-            Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0], &device).reshape([2, 1, 2, 1]);
+        let input = Tensor::<B, 4>::from([[[[1., 2.], [3., 4.]]], [[[5., 6.], [7., 8.]]]]);
 
         let output = affine.execute(input.clone());
-        assert_eq!(output.shape(), Shape::new([2, 1, 2, 1]));
+        assert_eq!(output.shape(), Shape::new([2, 1, 2, 2]));
     }
 
     #[test]
     fn test_random_affine_large_batch() {
-        let device = CudaDevice::default();
+        let device = Device::default();
+
         let affine = RandomAffine::<B>::new(1.0, 30.0);
-        let input =
-            Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0], &device).reshape([128, 3, 32, 32]);
+        let input = Tensor::<B, 4>::zeros([128, 3, 32, 32], &device);
 
         let output = affine.execute(input.clone());
         assert_eq!(output.shape(), Shape::new([128, 3, 32, 32]));
@@ -197,16 +198,85 @@ mod tests {
 
     #[test]
     fn test_random_flip_and_affine_can_be_chained() {
-        let device = CudaDevice::default();
         let flip = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
         let affine = RandomAffine::<B>::new(1.0, 30.0);
 
-        let input =
-            Tensor::<B, 4>::from_floats([1.0, 2.0, 3.0, 4.0], &device).reshape([1, 1, 2, 2]);
+        let input = Tensor::<B, 4>::from([[[[1., 2.], [3., 4.]]]]);
 
         let flipped = flip.execute(input.clone());
         let final_output = affine.execute(flipped);
 
         assert_eq!(final_output.shape(), input.shape());
+    }
+
+    #[test]
+    fn test_random_flip_horizontal_values() {
+        let flip = RandomFlip::<B>::new(1.0, Orientation::Horizontal);
+
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.]]]]);
+        let output = flip.execute(input);
+
+        let expected = Tensor::<B, 4>::from([[[[3., 2., 1.], [6., 5., 4.]]]]);
+
+        expected
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+
+    #[test]
+    fn test_random_flip_vertical_values() {
+        let flip = RandomFlip::<B>::new(1.0, Orientation::Vertical);
+
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.]]]]);
+        let output = flip.execute(input);
+
+        let expected = Tensor::<B, 4>::from([[[[4., 5., 6.], [1., 2., 3.]]]]);
+
+        expected
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+
+    #[test]
+    fn test_random_affine_rotation_45_values() {
+        let affine = RandomAffine::<B>::new(1.0, 45.0);
+
+        let input = Tensor::<B, 4>::from([[[[1., 2.], [3., 4.]]]]);
+
+        let output = affine.execute(input.clone());
+
+        let expected = Tensor::<B, 4>::from([[[[1.7500, 2.7929], [1.8358, 3.7500]]]]);
+
+        expected
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+
+    #[test]
+    fn test_random_affine_rotation_90_values() {
+        let affine = RandomAffine::<B>::new(1.0, 90.0);
+
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.], [7., 8., 9.]]]]);
+
+        let output = affine.execute(input.clone());
+
+        let expected = Tensor::<B, 4>::from([[[[3., 6., 9.], [3., 6., 9.], [3., 6., 9.]]]]);
+
+        expected
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+
+    #[test]
+    fn test_random_flip_probability_zero_returns_unchanged() {
+        let flip = RandomFlip::<B>::new(0.0, Orientation::Horizontal);
+        let input = Tensor::<B, 4>::from([[[[1., 2., 3.], [4., 5., 6.]]]]);
+
+        let output = flip.execute(input.clone());
+
+        // With p=0.0, should never flip - output equals input
+        input
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
     }
 }

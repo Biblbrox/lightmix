@@ -78,7 +78,7 @@ impl<B: Backend> RecursiveHilbertTokenizer<B> {
         // --------------------------------------------------
         let x = self.patch_conv.forward(images);
 
-        let [batch_size, embed_dim, grid_h, grid_w] = x.dims();
+        let [_, _, grid_h, grid_w] = x.dims();
 
         // --------------------------------------------------
         // STEP 2: Flatten to [B, N, E]

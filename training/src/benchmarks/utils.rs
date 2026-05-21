@@ -13,7 +13,6 @@ pub fn print_bench_results(title: &str, results: &[(u32, BenchmarkComputations)]
 
     let mut buffer = String::new();
     buffer.push_str(format!("## {}\n\n", title).as_str());
-    //buffer.push_str(format!("| {:-<1$} |\n", "", 85).as_str());
     buffer.push_str(
         format!(
             "| {:>10} | {:>12} | {:>12} | {:>12} | {:>12} | {:>12} |\n",
@@ -42,7 +41,6 @@ pub fn print_bench_results(title: &str, results: &[(u32, BenchmarkComputations)]
             .as_str(),
         );
     }
-    //buffer.push_str(format!("| {:-<1$} |\n", "", 85).as_str());
     file.write_all(buffer.as_bytes()).unwrap();
     println!("{}\n\n", buffer);
 }

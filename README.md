@@ -1,47 +1,37 @@
-## ViT inference project                               
-### Inference setup (Native method)
-Make sure you installed arm64 cross-compiler:
-```
-sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-```
-
-Export pkg-config sysroot variable to your aarch64 sysroot:
-```
-export PKG_CONFIG_SYSROOT_DIR="/usr/aarch64-linux-gnu"
-```
-
-Run cargo build for the specified architecture:
-```
-cargo build --release --target aarch64-unknown-linux-gnu
+```bash
+╔══════════════════════════════════════════════════════════════╗
+║ ██╗     ██╗ ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗██╗  ██╗  ║
+║ ██║     ██║██╔════╝ ██║  ██║╚══██╔══╝████╗ ████║██║╚██╗██╔╝  ║
+║ ██║     ██║██║  ███╗███████║   ██║   ██╔████╔██║██║ ╚███╔╝   ║
+║ ██║     ██║██║   ██║██╔══██║   ██║   ██║╚██╔╝██║██║ ██╔██╗   ║
+║ ███████╗██║╚██████╔╝██║  ██║   ██║   ██║ ╚═╝ ██║██║██╔╝ ██╗  ║
+║ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝  ║ 
+╚══════════════════════════════════════════════════════════════╝
 ```
 
-If you want to build for x64, omit --target keyword:
-```
-cargo build --release
-```
+## Project description and goals
+This repository is the playground for ViT acceleration methods for both training and inference. 
+We mainly focus on visual models and aim to extend developed techniques for multimodal tasks, such as
+lidar/camera fusion architectures. We strive to make ViT models easier to train and run locally on user
+devices.
 
-To specify a required glibc version edit file glibc.version and run cargo with the following variable:
+## Training setup
+As we use burn framework, setup should be straightforward. Run ```cargo build --release``` for build
+and ```cargo run --release``` to run the training process. In order to change network params or dataset
+location you should first, create a local config of your experiments (experiments.local.toml)
+```bash
+cp experiments.toml experiments.local.toml
 ```
-RUSTFLAGS="-C link-arg=-Wl,--version-script=./glibc.version" cargo build --release --target aarch64-unknown-linux-gnu
-```
+Edit cache dir in the config to your dataset location.
 
-### Inference setup (Docker-based cross method)
-Make sure you have docker installed. If it's so, run the following command to build the project for aarch64 architecture:
-```
-cross build --release --target aarch64-unknown-linux-gnu
-```
 
-You can compile for the default architecture (x64) as well:
-```
-cross build --release
-```
+## Speed improvement techniques
+We're focusing on optimizing ViT tight-spots such as self-attention, patch embeddings, and 
+data hunger.
 
-NOTE: compilation via cross can be slower if you use architecture different from your host one.
-
-#### Usage
-Inference build will generate spectre_vit binary. It supports the model path argument. In order to run inference with a specified model, use the following command:
-```
-./spectre_vit model_name.onnx
-```
-It will look for model_name.onnx and model.onnx.data in the specified path.
-At this moment, ort api doesn't support custom names for data files. Thus, you're required to name data file 'model.onnx.data' exactly. 
+### Self-attention replacements
+Right now, we're testing the following approaches:
+- StaticMixer -- static permutation matrices applied to token dimension;
+- LearnableMixer -- learnable (with sinkhorn) permutation matrices applied to token dimension;
+- StochasticMixer -- replacement of Q and K matrices with their double-stochastic variants;
+- StochasticWindowMixer -- replacement of Q and K matrices with their double-stochastic variants in addition with window attention.

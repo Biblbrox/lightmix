@@ -33,4 +33,55 @@ impl<B: Backend> Augmentation<B> for Normalize<B> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use burn::{
+        Tensor,
+        backend::{Flex, flex::FlexDevice},
+        tensor::{Shape, TensorData, Tolerance},
+    };
+
+    use crate::augmentations::{Augmentation, normalize::Normalize};
+
+    type B = Flex;
+    type Device = FlexDevice;
+
+    #[test]
+    fn test_normalize_zero_std_panics_or_handles() {
+        // This test documents behavior with zero std
+        // Depending on your requirements, you might want to add validation
+        let device = Device::default();
+        let normalize = Normalize::<B>::new(vec![0.0], vec![0.0], &device);
+
+        let input = Tensor::<B, 4>::ones([1, 1, 2, 2], &device);
+
+        // This will produce infinity values - might want to handle this case
+        let output = normalize.execute(input);
+
+        // Just verify shape is preserved even with zero std
+        assert_eq!(output.shape(), Shape::new([1, 1, 2, 2]));
+    }
+
+    #[test]
+    fn test_normalize_single_channel_simple_case() {
+        let device = Device::default();
+        // Normalize: (x - 1) / 2
+        let normalize = Normalize::<B>::new(vec![2.0], vec![1.0], &device);
+
+        let input = Tensor::<B, 4>::from_data(
+            TensorData::new(vec![1.0f32, 3.0, 5.0, 7.0], [1, 1, 2, 2]),
+            &device,
+        );
+
+        let output = normalize.execute(input);
+
+        // (1-1)/2=0, (3-1)/2=1, (5-1)/2=2, (7-1)/2=3
+        let expected = Tensor::<B, 4>::from_data(
+            TensorData::new(vec![0.0f32, 1.0, 2.0, 3.0], [1, 1, 2, 2]),
+            &device,
+        );
+
+        expected
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+}
