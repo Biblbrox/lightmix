@@ -1,20 +1,20 @@
 use burn::{
     Tensor,
     nn::attention::{MhaInput, MultiHeadAttention, MultiHeadAttentionConfig},
-    tensor::{Distribution, backend::Backend},
+    tensor::{Distribution, Int, backend::Backend},
 };
 use cubecl::benchmark::Benchmark;
 
-use embed_former_train::{
+use lightmix::{
     benchmarks::{CpuBackend, GpuAutodiffBackend},
     mixing::{
-        bandedmixer::{BandedMixer, BandedMixerConfig},
         learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
         staticmixer::{PermutationStrategy, StaticMixer, StaticMixerConfig},
+        stochasticmixer::{StochasticMixer, StochasticMixerConfig},
+        stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
     },
 };
 
-// Fix the incomplete execute method in SelfAttentionBenchmark
 impl<B: Backend> Benchmark for SelfAttentionBenchmark<B> {
     type Input = (Tensor<B, 3>, MultiHeadAttention<B>);
     type Output = Tensor<B, 3>;
@@ -58,44 +58,124 @@ pub struct SelfAttentionBenchmark<B: Backend> {
 }
 
 #[derive(Clone, Copy)]
-pub enum BandedMixerMode {
+pub enum StochasticMixerMode {
     Soft,
     Hard,
+    Inference,
 }
 
-pub struct BandedMixerBenchmark<B: Backend> {
+pub struct StochasticMixerBenchmark<B: Backend> {
     pub embed_dim: usize,
     pub num_tokens: usize,
     pub batch_size: usize,
     pub num_heads: usize,
-    pub mode: BandedMixerMode,
+    pub mode: StochasticMixerMode,
     pub device: B::Device,
 }
 
-impl<B: Backend> Benchmark for BandedMixerBenchmark<B> {
-    type Input = (Tensor<B, 3>, BandedMixer<B>);
+impl<B: Backend> Benchmark for StochasticMixerBenchmark<B> {
+    type Input = (Tensor<B, 3>, Tensor<B, 4, Int>, StochasticMixer<B>);
     type Output = Tensor<B, 3>;
 
     fn prepare(&self) -> Self::Input {
+        let mixer =
+            StochasticMixerConfig::new(self.embed_dim, self.num_heads, 0.01).init(&self.device);
+        let (perm_q_base, perm_k_base) = mixer.extract_permutations();
+
+        // [1, H, 1, d] -> [B, H, N, d]
+        let perm_q = perm_q_base
+            .unsqueeze_dim::<4>(0)
+            .repeat_dim(0, self.batch_size)
+            .repeat_dim(2, self.num_tokens);
+        let perm_k = perm_k_base
+            .unsqueeze_dim::<4>(0)
+            .repeat_dim(0, self.batch_size)
+            .repeat_dim(2, self.num_tokens);
+
+        let perm_qk = Tensor::cat(vec![perm_q, perm_k], 3).expand([
+            self.batch_size,
+            self.num_heads,
+            self.num_tokens,
+            2 * self.embed_dim / self.num_heads,
+        ]);
         (
             Tensor::<B, 3>::random(
                 [self.batch_size, self.num_tokens, self.embed_dim],
                 Distribution::Default,
                 &self.device,
             ),
-            BandedMixerConfig::new(self.embed_dim, self.num_tokens, self.num_heads, 3, 0.01)
-                .with_use_monarch(false)
-                .init(&self.device),
+            perm_qk,
+            mixer,
         )
     }
 
     fn name(&self) -> String {
         let mode = match self.mode {
-            BandedMixerMode::Soft => "soft",
-            BandedMixerMode::Hard => "hard",
+            StochasticMixerMode::Soft => "soft",
+            StochasticMixerMode::Hard => "hard",
+            StochasticMixerMode::Inference => "inference",
         };
         format!(
-            "BandedMixer[{}]-{:?}x{:?}x{:?} {:?} heads",
+            "StochasticMixer[{}]-{:?}x{:?}x{:?} {:?} heads",
+            mode, self.batch_size, self.num_tokens, self.embed_dim, self.num_heads
+        )
+        .to_lowercase()
+    }
+
+    fn sync(&self) {
+        B::sync(&self.device).unwrap();
+    }
+
+    fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
+        let (tensor, perm_qk, mixer) = input;
+        Ok(match self.mode {
+            StochasticMixerMode::Soft => mixer.forward(tensor),
+            StochasticMixerMode::Hard => mixer.forward_hard(tensor),
+            StochasticMixerMode::Inference => mixer.forward_inference(tensor, perm_qk),
+        })
+    }
+}
+
+pub struct StochasticWinMixerBenchmark<B: Backend> {
+    pub embed_dim: usize,
+    pub num_tokens: usize,
+    pub batch_size: usize,
+    pub num_heads: usize,
+    pub mode: StochasticMixerMode,
+    pub device: B::Device,
+}
+
+impl<B: Backend> Benchmark for StochasticWinMixerBenchmark<B> {
+    type Input = (Tensor<B, 3>, StochasticWindowMixer<B>);
+    type Output = Tensor<B, 3>;
+
+    fn prepare(&self) -> Self::Input {
+        let mixer = StochasticWindowMixerConfig::new(
+            self.embed_dim,
+            self.num_tokens,
+            self.num_heads,
+            3,
+            0.01,
+        )
+        .init(&self.device);
+        (
+            Tensor::<B, 3>::random(
+                [self.batch_size, self.num_tokens, self.embed_dim],
+                Distribution::Default,
+                &self.device,
+            ),
+            mixer,
+        )
+    }
+
+    fn name(&self) -> String {
+        let mode = match self.mode {
+            StochasticMixerMode::Soft => "soft",
+            StochasticMixerMode::Hard => "hard",
+            _ => todo!("Not implemented"),
+        };
+        format!(
+            "StochasticWinMixer[{}]-{:?}x{:?}x{:?} {:?} heads",
             mode, self.batch_size, self.num_tokens, self.embed_dim, self.num_heads
         )
         .to_lowercase()
@@ -108,8 +188,9 @@ impl<B: Backend> Benchmark for BandedMixerBenchmark<B> {
     fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
         let (tensor, mixer) = input;
         Ok(match self.mode {
-            BandedMixerMode::Soft => mixer.forward(tensor),
-            BandedMixerMode::Hard => mixer.forward_hard(tensor),
+            StochasticMixerMode::Soft => mixer.forward(tensor),
+            StochasticMixerMode::Hard => mixer.forward_hard(tensor),
+            _ => todo!("Not umplemented"),
         })
     }
 }
@@ -206,7 +287,7 @@ impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
 }
 
 fn main() {
-    use embed_former_train::benchmarks::GpuBackend;
+    use lightmix::benchmarks::GpuBackend;
 
     println!("=== Mixing Benchmarks ===");
     mixing_benchmark_backend::<GpuBackend>("Gpu");
@@ -217,7 +298,7 @@ fn main() {
 fn mixing_benchmark_backend<B: Backend>(backend: &str) {
     use cubecl::benchmark::BenchmarkComputations;
     use cubecl::profile::TimingMethod;
-    use embed_former_train::benchmarks::utils::print_bench_results;
+    use lightmix::benchmarks::utils::print_bench_results;
 
     let device = B::Device::default();
 
@@ -229,8 +310,11 @@ fn mixing_benchmark_backend<B: Backend>(backend: &str) {
     let mut results_attn: Vec<(u32, BenchmarkComputations)> = Vec::new();
     let mut results_static: Vec<(u32, BenchmarkComputations)> = Vec::new();
     let mut results_learned: Vec<(u32, BenchmarkComputations)> = Vec::new();
-    let mut results_banded_soft: Vec<(u32, BenchmarkComputations)> = Vec::new();
-    let mut results_banded_hard: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let mut results_stochastic_soft: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let mut results_stochastic_hard: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let mut results_stochastic_inference: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let mut results_stochastic_win_soft: Vec<(u32, BenchmarkComputations)> = Vec::new();
+    let mut results_stochastic_win_hard: Vec<(u32, BenchmarkComputations)> = Vec::new();
 
     for head in num_heads.into_iter() {
         let bench_attn = SelfAttentionBenchmark::<B> {
@@ -256,20 +340,47 @@ fn mixing_benchmark_backend<B: Backend>(backend: &str) {
             device: device.clone(),
         };
 
-        let bench_banded_soft = BandedMixerBenchmark::<B> {
+        let bench_stochastic_soft = StochasticMixerBenchmark::<B> {
             batch_size: batches[0],
             embed_dim: embed_dim[0],
             num_heads: head,
-            mode: BandedMixerMode::Soft,
+            mode: StochasticMixerMode::Soft,
             num_tokens: num_tokens[0],
             device: device.clone(),
         };
 
-        let bench_banded_hard = BandedMixerBenchmark::<B> {
+        let bench_stochastic_hard = StochasticMixerBenchmark::<B> {
             batch_size: batches[0],
             embed_dim: embed_dim[0],
             num_heads: head,
-            mode: BandedMixerMode::Hard,
+            mode: StochasticMixerMode::Hard,
+            num_tokens: num_tokens[0],
+            device: device.clone(),
+        };
+
+        let bench_stochastic_inference = StochasticMixerBenchmark::<B> {
+            batch_size: batches[0],
+            embed_dim: embed_dim[0],
+            num_heads: head,
+            mode: StochasticMixerMode::Inference,
+            num_tokens: num_tokens[0],
+            device: device.clone(),
+        };
+
+        let bench_stochastic_win_soft = StochasticWinMixerBenchmark::<B> {
+            batch_size: batches[0],
+            embed_dim: embed_dim[0],
+            num_heads: head,
+            mode: StochasticMixerMode::Soft,
+            num_tokens: num_tokens[0],
+            device: device.clone(),
+        };
+
+        let bench_stochastic_win_hard = StochasticWinMixerBenchmark::<B> {
+            batch_size: batches[0],
+            embed_dim: embed_dim[0],
+            num_heads: head,
+            mode: StochasticMixerMode::Hard,
             num_tokens: num_tokens[0],
             device: device.clone(),
         };
@@ -283,15 +394,36 @@ fn mixing_benchmark_backend<B: Backend>(backend: &str) {
         let bench_res_learned = bench_learned.run(TimingMethod::System).unwrap();
         results_learned.push((head as u32, BenchmarkComputations::new(&bench_res_learned)));
 
-        let bench_res_banded_soft = bench_banded_soft.run(TimingMethod::System).unwrap();
-        results_banded_soft.push((
+        let bench_res_stochastic_soft = bench_stochastic_soft.run(TimingMethod::System).unwrap();
+        results_stochastic_soft.push((
             head as u32,
-            BenchmarkComputations::new(&bench_res_banded_soft),
+            BenchmarkComputations::new(&bench_res_stochastic_soft),
         ));
-        let bench_res_banded_hard = bench_banded_hard.run(TimingMethod::System).unwrap();
-        results_banded_hard.push((
+        let bench_res_stochastic_hard = bench_stochastic_hard.run(TimingMethod::System).unwrap();
+        results_stochastic_hard.push((
             head as u32,
-            BenchmarkComputations::new(&bench_res_banded_hard),
+            BenchmarkComputations::new(&bench_res_stochastic_hard),
+        ));
+
+        let bench_res_stochastic_win_soft =
+            bench_stochastic_win_soft.run(TimingMethod::System).unwrap();
+        results_stochastic_win_soft.push((
+            head as u32,
+            BenchmarkComputations::new(&bench_res_stochastic_win_soft),
+        ));
+        let bench_res_stochastic_win_hard =
+            bench_stochastic_win_hard.run(TimingMethod::System).unwrap();
+        results_stochastic_win_hard.push((
+            head as u32,
+            BenchmarkComputations::new(&bench_res_stochastic_win_hard),
+        ));
+
+        let bench_res_stochastic_inference = bench_stochastic_inference
+            .run(TimingMethod::System)
+            .unwrap();
+        results_stochastic_inference.push((
+            head as u32,
+            BenchmarkComputations::new(&bench_res_stochastic_inference),
         ));
     }
 
@@ -311,13 +443,29 @@ fn mixing_benchmark_backend<B: Backend>(backend: &str) {
         "num_heads",
     );
     print_bench_results(
-        format!("BandedPermut Soft ({})", backend).as_str(),
-        &results_banded_soft,
+        format!("StochasticPermut Soft ({})", backend).as_str(),
+        &results_stochastic_soft,
         "num_heads",
     );
     print_bench_results(
-        format!("BandedPermut Hard ({})", backend).as_str(),
-        &results_banded_hard,
+        format!("StocasticPermut Hard ({})", backend).as_str(),
+        &results_stochastic_hard,
+        "num_heads",
+    );
+    print_bench_results(
+        format!("StochasticPermut Inference ({})", backend).as_str(),
+        &results_stochastic_inference,
+        "num_heads",
+    );
+
+    print_bench_results(
+        format!("StochasticWinPermut Soft ({})", backend).as_str(),
+        &results_stochastic_win_soft,
+        "num_heads",
+    );
+    print_bench_results(
+        format!("StocasticWinPermut Hard ({})", backend).as_str(),
+        &results_stochastic_win_hard,
         "num_heads",
     );
 }

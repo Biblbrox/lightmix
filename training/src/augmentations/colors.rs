@@ -302,12 +302,7 @@ impl<B: Backend> Augmentation<B> for GaussianBlur<B> {
         }
 
         let sigma = rng.random_range(self.min_sigma..self.max_sigma);
-        let [b, c, h, w] = [
-            input.dims()[0],
-            input.dims()[1],
-            input.dims()[2],
-            input.dims()[3],
-        ];
+        let c = input.dims()[1];
 
         let kernel = self.make_kernel(c, sigma); // [C, 1, k, k]
         let pad = self.kernel_size / 2;
@@ -327,4 +322,201 @@ impl<B: Backend> Augmentation<B> for GaussianBlur<B> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use burn::{
+        Tensor,
+        backend::{Flex, flex::FlexDevice},
+        tensor::{Shape, TensorData, Tolerance},
+    };
+
+    use crate::augmentations::{
+        Augmentation,
+        colors::{ColorJitter, RandomGrayscale},
+    };
+
+    type B = Flex;
+    type Device = FlexDevice;
+
+    #[test]
+    fn test_color_jitter_zero_params_preserves_input() {
+        let device = Device::default();
+        // With all parameters set to 0, no change should occur
+        let jitter = ColorJitter::<B>::new(0.0, 0.0, 0.0);
+
+        let input = Tensor::<B, 4>::from_data(
+            TensorData::new(
+                vec![
+                    0.2f32, 0.4, 0.6, 0.8, 0.3, 0.5, 0.7, 0.9, 0.1, 0.3, 0.5, 0.7,
+                ],
+                [1, 3, 2, 2],
+            ),
+            &device,
+        );
+
+        let output = jitter.execute(input.clone());
+
+        // With all factors = 1.0, output should equal input
+        input
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+
+    #[test]
+    fn test_color_jitter_preserves_shape() {
+        let device = Device::default();
+        let jitter = ColorJitter::<B>::new(0.5, 0.5, 0.5);
+
+        let input = Tensor::<B, 4>::random(
+            Shape::new([4, 3, 32, 32]),
+            burn::tensor::Distribution::Uniform(0.0, 1.0),
+            &device,
+        );
+
+        let output = jitter.execute(input.clone());
+
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.shape(), Shape::new([4, 3, 32, 32]));
+    }
+
+    #[test]
+    fn test_color_jitter_preserves_shape_batch() {
+        let device = Device::default();
+        let jitter = ColorJitter::<B>::new(0.3, 0.3, 0.3);
+
+        let input = Tensor::<B, 4>::random(
+            Shape::new([16, 3, 64, 64]),
+            burn::tensor::Distribution::Uniform(0.0, 1.0),
+            &device,
+        );
+
+        let output = jitter.execute(input.clone());
+
+        assert_eq!(output.shape(), Shape::new([16, 3, 64, 64]));
+    }
+
+    #[test]
+    fn test_color_jitter_values_in_range() {
+        let device = Device::default();
+        let jitter = ColorJitter::<B>::new(0.5, 0.5, 0.5);
+
+        let input = Tensor::<B, 4>::random(
+            Shape::new([2, 3, 8, 8]),
+            burn::tensor::Distribution::Uniform(0.0, 1.0),
+            &device,
+        );
+
+        let output = jitter.execute(input);
+
+        // All values should be clamped to [0, 1]
+        let output_data = output.to_data();
+        let values: Vec<f32> = output_data.as_slice::<f32>().unwrap().to_vec();
+
+        for &v in &values {
+            assert!(v >= 0.0 && v <= 1.0, "Value {} out of [0, 1] range", v);
+        }
+    }
+
+    #[test]
+    fn test_color_jitter_different_input_shapes() {
+        let device = Device::default();
+        let jitter = ColorJitter::<B>::new(0.3, 0.3, 0.3);
+
+        // Test with non-square images
+        let input = Tensor::<B, 4>::random(
+            Shape::new([2, 3, 64, 128]),
+            burn::tensor::Distribution::Uniform(0.0, 1.0),
+            &device,
+        );
+
+        let output = jitter.execute(input);
+        assert_eq!(output.shape(), Shape::new([2, 3, 64, 128]));
+
+        // Test with single pixel
+        let input_small = Tensor::<B, 4>::ones(Shape::new([1, 3, 1, 1]), &device);
+        let output_small = jitter.execute(input_small);
+        assert_eq!(output_small.shape(), Shape::new([1, 3, 1, 1]));
+    }
+
+    // ============================================================================
+    // RandomGrayscale Tests
+    // ============================================================================
+    //
+    #[test]
+    fn test_random_grayscale_probability_one_always_grayscales() {
+        let device = Device::default();
+        let gray = RandomGrayscale::<B>::new(1.0);
+
+        // Input with different channel values
+        let input = Tensor::<B, 4>::from_data(
+            TensorData::new(
+                vec![
+                    1.0f32, 2.0, // Channel 0 (R)
+                    3.0, 4.0, // Channel 1 (G)
+                    5.0, 6.0, // Channel 2 (B)
+                ],
+                [1, 3, 1, 2],
+            ),
+            &device,
+        );
+
+        let output = gray.execute(input);
+
+        // All channels should be equal after grayscale
+        let output_data = output.to_data();
+        let values: Vec<f32> = output_data.as_slice::<f32>().unwrap().to_vec();
+
+        // Check that R, G, B channels have the same values
+        // For position 0: values[0]=R, values[2]=G, values[4]=B
+        let r_val0 = values[0];
+        let g_val0 = values[2];
+        let b_val0 = values[4];
+
+        assert!(
+            (r_val0 - g_val0).abs() < 1e-6,
+            "R and G channels should be equal at position 0"
+        );
+        assert!(
+            (g_val0 - b_val0).abs() < 1e-6,
+            "G and B channels should be equal at position 0"
+        );
+
+        // For position 1: values[1]=R, values[3]=G, values[5]=B
+        let r_val1 = values[1];
+        let g_val1 = values[3];
+        let b_val1 = values[5];
+
+        assert!(
+            (r_val1 - g_val1).abs() < 1e-6,
+            "R and G channels should be equal at position 1"
+        );
+        assert!(
+            (g_val1 - b_val1).abs() < 1e-6,
+            "G and B channels should be equal at position 1"
+        );
+    }
+
+    #[test]
+    fn test_random_grayscale_probability_zero_never_grayscales() {
+        let device = Device::default();
+        let gray = RandomGrayscale::<B>::new(0.0);
+
+        let input = Tensor::<B, 4>::from_data(
+            TensorData::new(
+                vec![
+                    1.0f32, 2.0, // Channel 0
+                    3.0, 4.0, // Channel 1
+                    5.0, 6.0, // Channel 2
+                ],
+                [1, 3, 1, 2],
+            ),
+            &device,
+        );
+
+        let output = gray.execute(input.clone());
+
+        // With p=0.0, output should equal input
+        input
+            .to_data()
+            .assert_approx_eq(&output.to_data(), Tolerance::<f32>::balanced());
+    }
+}

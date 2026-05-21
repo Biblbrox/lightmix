@@ -10,10 +10,7 @@ use burn::{
 
 use crate::{
     linear::{LinearLayer, monarch::MonarchLinearConfig},
-    mixing::{
-        bandedmixer::{BandedMixer, BandedMixerConfig},
-        staticmixer::{PermutationStrategy, StaticMixer, StaticMixerConfig},
-    },
+    mixing::stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
 
@@ -111,7 +108,7 @@ impl<B: Backend> TokenMerger<B> {
 pub struct FastEncoderLayer<B: Backend> {
     linear1: LinearLayer<B>,
     linear2: LinearLayer<B>,
-    mix_layer: BandedMixer<B>,
+    mix_layer: StochasticWindowMixer<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
     dropout: Dropout,
@@ -134,6 +131,8 @@ pub struct FastEncoderLayerConfig {
     sinkhorn_temp: f32,
     #[config(default = true)]
     use_monarch: bool,
+    grid_h: usize,
+    grid_w: usize,
 }
 
 #[derive(Module, Debug)]
@@ -165,8 +164,9 @@ impl<B: Backend> FastEncoderLayer<B> {
         let ff_out = self._ff_block(self.norm2.forward(x.clone()));
         let x = self.drop_path.forward(x, ff_out);
 
+        x
         // Merge tokens N -> N/2 before the FFN
-        self.merger.forward(x)
+        //self.merger.forward(x)
     }
 
     pub fn _ff_block(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
@@ -189,27 +189,17 @@ impl FastEncoderLayerConfig {
             }
         };
 
-        let kernel_size = 3;
-
         FastEncoderLayer {
             linear1: make_linear(self.embed_dim, self.hidden_dim),
             linear2: make_linear(self.hidden_dim, self.embed_dim),
-            mix_layer: BandedMixerConfig::new(
+            mix_layer: StochasticWindowMixerConfig::new(
                 self.embed_dim,
                 self.seq_length,
                 self.num_heads,
-                kernel_size,
+                3,
                 self.sinkhorn_temp,
             )
-            .with_use_monarch(self.use_monarch)
             .init(device),
-            //mix_layer: StaticMixerConfig::new(
-            //    self.embed_dim,
-            //    self.seq_length,
-            //    self.num_heads,
-            //    PermutationStrategy::Xor,
-            //)
-            //.init(device),
             norm1: DynamicERFConfig::new(self.embed_dim).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
@@ -248,7 +238,8 @@ impl FastEncoderConfig {
         let seq_length = self.seq_length.next_power_of_two();
 
         for i in 0..self.num_layers {
-            let layer_seq = (seq_length >> i).max(1);
+            //let layer_seq = (seq_length >> i).max(1);
+            let layer_seq = seq_length;
             layers.push(
                 FastEncoderLayerConfig::new(
                     layer_seq,
@@ -258,9 +249,11 @@ impl FastEncoderConfig {
                     self.dropout,
                     i,
                     self.sinkhorn_temp,
+                    self.grid_size,
+                    self.grid_size,
                 )
-                //.with_drop_path_prob(((i + 1) as f64 / self.num_layers as f64) * 0.1)
-                .with_use_monarch(i >= 2)
+                .with_drop_path_prob(((i + 1) as f64 / self.num_layers as f64) * 0.1)
+                .with_use_monarch(false)
                 .init(device),
             );
         }

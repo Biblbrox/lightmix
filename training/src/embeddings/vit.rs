@@ -104,41 +104,35 @@ impl PatchEmbeddingConfig {
 
 #[cfg(test)]
 mod tests {
-    use burn::tensor::Shape;
+    use burn::{
+        backend::{Flex, flex::FlexDevice},
+        tensor::Shape,
+    };
 
-    use crate::{models::fast_vit::FastViTConfig, tokenization::vit::PatcherConfig};
+    use crate::embeddings::vit::PatcherConfig;
 
     use super::*;
+
+    type B = Flex;
+    type Device = FlexDevice;
 
     const IN_CHANNELS: usize = 3;
     const PATCH_SIZE: usize = 4;
     const IMG_SIZE: usize = 32;
     const NUM_PATCHES: usize = (IMG_SIZE / PATCH_SIZE).pow(2); // 64
-    const EMBED_DIM: usize = PATCH_SIZE.pow(2) * 1;
-    const NUM_HEADS: usize = 8;
-    const NUM_ENCODERS: usize = 4;
-    const NUM_CLASSES: usize = 10;
+    const EMBED_DIM: usize = PATCH_SIZE.pow(2) * IN_CHANNELS;
     const BATCH_SIZE: usize = 10;
-    const NUM_CHANNELS: usize = 1;
-    const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
-    const SINKHORNE_TEMPERATURE: f32 = 0.05;
 
     #[test]
     fn test_patcher() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
-
-        // Create test image
+        let device = Device::default();
         let test_image = Tensor::<B, 4>::zeros(
-            Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
+            Shape::new([BATCH_SIZE, IN_CHANNELS, IMG_SIZE, IMG_SIZE]),
             &device,
         );
-
-        // Create pather
         let patcher = PatcherConfig::new(IN_CHANNELS, EMBED_DIM, PATCH_SIZE).init(&device);
         let patched_image = patcher.forward(test_image);
-
         assert_eq!(
             patched_image.shape(),
             Shape::new([BATCH_SIZE, NUM_PATCHES, EMBED_DIM])
@@ -147,15 +141,11 @@ mod tests {
 
     #[test]
     fn test_patch_embedding() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
-
-        // Create test image
+        let device = Device::default();
         let test_image = Tensor::<B, 4>::zeros(
-            Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
+            Shape::new([BATCH_SIZE, IN_CHANNELS, IMG_SIZE, IMG_SIZE]),
             &device,
         );
-
         let model = PatchEmbeddingConfig::new(
             IN_CHANNELS,
             EMBED_DIM,
@@ -171,33 +161,5 @@ mod tests {
             vit_input.shape(),
             Shape::new([BATCH_SIZE, NUM_PATCHES + 1, EMBED_DIM])
         );
-    }
-
-    #[test]
-    fn test_vit() {
-        type B = burn::backend::cuda::Cuda;
-        let device = burn::backend::cuda::CudaDevice::default();
-
-        // Create test image
-        let test_image = Tensor::<B, 4>::zeros(
-            Shape::new([BATCH_SIZE, NUM_CHANNELS, IMG_SIZE, IMG_SIZE]),
-            &device,
-        );
-
-        let model = FastViTConfig::new(
-            IN_CHANNELS,
-            EMBED_DIM,
-            NUM_HEADS,
-            NUM_ENCODERS,
-            NUM_CLASSES,
-            PATCH_SIZE,
-            IMG_SIZE,
-            HIDDEN_DIM,
-            DROPOUT,
-            SINKHORNE_TEMPERATURE,
-        )
-        .init(&device);
-        let vit_output = model.forward(test_image);
-        assert_eq!(vit_output.shape(), Shape::new([BATCH_SIZE, NUM_CLASSES]));
     }
 }

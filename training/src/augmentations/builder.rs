@@ -1,17 +1,21 @@
 use burn::tensor::backend::Backend;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::augmentations::colors::{ColorJitter, GaussianBlur, RandomErasing, RandomGrayscale};
 use crate::augmentations::normalize::Normalize;
 use crate::augmentations::rotation::{Orientation, RandomAffine, RandomFlip};
 use crate::augmentations::{Augmentation, Pipeline};
-use crate::config::Config;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransformConfig {
     pub name: String,
-    #[serde(default)]
-    pub params: toml::Value,
+    #[serde(flatten)]
+    pub params: std::collections::HashMap<String, toml::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AugmentationConfig {
+    pub transforms: Vec<TransformConfig>,
 }
 
 pub struct AugmentationBuilder<B: Backend> {
@@ -23,15 +27,17 @@ impl<B: Backend> AugmentationBuilder<B> {
         Self { device }
     }
 
-    pub fn build_from_config(&self, config: &Config) -> Pipeline<B> {
+    pub fn build(&self, config: &AugmentationConfig, mean: Vec<f32>, std: Vec<f32>) -> Pipeline<B> {
         let mut transforms: Vec<Box<dyn Augmentation<B>>> = Vec::new();
 
-        for transform in &config.augmentations {
+        for transform in &config.transforms {
             match transform.name.as_str() {
                 "normalize" => {
-                    let std = config.std.clone();
-                    let mean = config.mean.clone();
-                    transforms.push(Box::new(Normalize::<B>::new(std, mean, &self.device)));
+                    transforms.push(Box::new(Normalize::<B>::new(
+                        std.clone(),
+                        mean.clone(),
+                        &self.device,
+                    )));
                 }
                 "random_flip" => {
                     let p = transform.params["probability"].as_float().unwrap();
@@ -76,8 +82,7 @@ impl<B: Backend> AugmentationBuilder<B> {
                 }
                 "random_grayscale" => {
                     let p = transform.params["probability"].as_float().unwrap();
-                    let gs = RandomGrayscale::<B>::new(p);
-                    transforms.push(Box::new(gs));
+                    transforms.push(Box::new(RandomGrayscale::<B>::new(p)));
                 }
                 _ => {
                     eprintln!("Unknown augmentation: {}", transform.name);
