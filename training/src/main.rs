@@ -76,7 +76,7 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
             let artifact_dir = format!(
-                "./assets/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}-learnedmixer",
+                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}",
                 model_name,
                 dataset_name,
                 model_cfg.num_heads,
@@ -100,7 +100,7 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
             let artifact_dir = format!(
-                "./assets/{}-{}-head{}-hid{}-emb{}-enc{}",
+                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}",
                 model_name,
                 dataset_name,
                 model_cfg.num_heads,
@@ -123,7 +123,7 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
             let artifact_dir = format!(
-                "./assets/{}-{}-stem{}-ch{:?}-dep{:?}",
+                "./experiments/{}-{}-stem{}-ch{:?}-dep{:?}",
                 model_name,
                 dataset_name,
                 model_cfg.stem_channels,

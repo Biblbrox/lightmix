@@ -9,6 +9,7 @@ uv.lock
 vit/__pycache__
 .vscode
 *.svg
+!assets/logo.svg
 *.data
 *.data.old
 
@@ -31,7 +32,7 @@ example.png
 
 # Datasets
 datasets/*
-assets/*
+experiments/*
 
 
 # Project files

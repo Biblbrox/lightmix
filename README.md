@@ -1,13 +1,6 @@
-```bash
-╔══════════════════════════════════════════════════════════════╗
-║ ██╗     ██╗ ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗██╗  ██╗  ║
-║ ██║     ██║██╔════╝ ██║  ██║╚══██╔══╝████╗ ████║██║╚██╗██╔╝  ║
-║ ██║     ██║██║  ███╗███████║   ██║   ██╔████╔██║██║ ╚███╔╝   ║
-║ ██║     ██║██║   ██║██╔══██║   ██║   ██║╚██╔╝██║██║ ██╔██╗   ║
-║ ███████╗██║╚██████╔╝██║  ██║   ██║   ██║ ╚═╝ ██║██║██╔╝ ██╗  ║
-║ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚═╝╚═╝  ╚═╝  ║ 
-╚══════════════════════════════════════════════════════════════╝
-```
+<p align="center">
+  <img src="assets/logo-retro.svg" alt="LightMix Logo" width="800">
+</p>
 
 ## Project description and goals
 This repository is the playground for ViT acceleration methods for both training and inference. 
@@ -31,7 +24,18 @@ data hunger.
 
 ### Self-attention replacements
 Right now, we're testing the following approaches:
-- StaticMixer -- static permutation matrices applied to token dimension;
-- LearnableMixer -- learnable (with sinkhorn) permutation matrices applied to token dimension;
-- StochasticMixer -- replacement of Q and K matrices with their double-stochastic variants;
-- StochasticWindowMixer -- replacement of Q and K matrices with their double-stochastic variants in addition with window attention.
+- StaticMixer - static permutation matrices applied to token dimension;
+- LearnableMixer - learnable (with sinkhorn) permutation matrices applied to token dimension;
+- StochasticMixer - replacement of Q and K matrices with their double-stochastic variants;
+- StochasticWindowMixer - replacement of Q and K matrices with their double-stochastic variants in addition with window attention.
+
+
+## Model zoo
+For now, we have the following models:
+- ViT (conventional implementation);
+- EfficientViT;
+- Custom FastViT implementation.
+
+Implementations in progress:
+- Swin ViT;
+- Token-To-Token ViT.
