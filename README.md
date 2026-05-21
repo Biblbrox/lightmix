@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="LightMix Logo" width="800">
+  <img src="assets/logo.png" alt="LightMix Logo" width="800">
 </p>
 
 ## Project description and goals
