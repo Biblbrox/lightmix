@@ -62,14 +62,15 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         dataset_cfg.mean.clone(),
         &device,
     ));
-    let mut pipeline_train = AugmentationBuilder::<Autodiff<B>>::new(device.clone()).build(
-        &shared.augmentations,
-        dataset_cfg.mean.clone(),
-        dataset_cfg.std.clone(),
-    );
+    let (mut pipeline_train, mut pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
+        AugmentationBuilder::new().build(
+            &shared.augmentations,
+            dataset_cfg.mean.clone(),
+            dataset_cfg.std.clone(),
+            &device,
+        );
     pipeline_train = pipeline_train.prepend(vec![normalize_train]);
-    let pipeline_val = Pipeline::<B>::new(vec![normalize_val]);
-
+    pipeline_val = pipeline_val.prepend(vec![normalize_val]);
     let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
 
     match model_name.as_str() {

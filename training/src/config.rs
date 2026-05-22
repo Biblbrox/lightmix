@@ -50,7 +50,7 @@ fn override_conf(mainconf: &mut Table, localconf: &Table) {
             Some(mainvalue) => {
                 if let (Value::Table(localtable), Value::Table(maintable)) = (localvalue, mainvalue)
                 {
-                    override_conf(maintable, localtable); // just call itself directly
+                    override_conf(maintable, localtable);
                 } else {
                     let _ = mainconf.insert(localkey.clone(), localvalue.clone());
                 }
@@ -119,12 +119,12 @@ active_model = "model"
 
 [augmentations]
 
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "random_flip"
 probability = 0.5
 orientation = "horizontal"
 
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "color_jitter"
 brightness = 0.2
 contrast = 0.2
@@ -238,7 +238,7 @@ hidden_dim = 128
         let (_dir, config_path) = create_test_config();
         let config = ParsedConfig::parse(&config_path, None);
         let shared: SharedConfig = config.shared;
-        let transforms = &shared.augmentations.transforms;
+        let transforms = &shared.augmentations.transforms_train;
 
         assert_eq!(transforms.len(), 2);
         assert_eq!(transforms[0].name, "random_flip");
