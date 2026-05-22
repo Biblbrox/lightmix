@@ -332,17 +332,21 @@ activation = "relu"
 [augmentations]
 
 
+[[augmentations.transforms_val]]
+name = "normalize"
+
+[[augmentations.transforms_train]]
+name = "normalize"
+
 [[augmentations.transforms_train]]
 name = "random_flip"
 probability = 0.5
 orientation = "horizontal"
 
-
 [[augmentations.transforms_train]]
 name = "random_flip"
 probability = 0.5
 orientation = "vertical"
-
 
 # [[augmentations.transforms_train]]
 # name = "random_affine"

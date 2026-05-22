@@ -8,7 +8,7 @@ use burn::{
 };
 use burn_cuda::Cuda;
 use lightmix::{
-    augmentations::{Pipeline, builder::AugmentationBuilder, normalize::Normalize},
+    augmentations::{Pipeline, builder::AugmentationBuilder},
     config::{OptimizerConfig, ParsedConfig},
     data::dataset::{LazyFiletype, cifar100::Cifar100Dataset},
     models::{efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, vit::ViTConfig},
@@ -52,25 +52,13 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         .with_beta_1(optimizer_cfg.adam_betas[0] as f32)
         .with_beta_2(optimizer_cfg.adam_betas[1] as f32);
 
-    let normalize_train = Box::new(Normalize::<Autodiff<B>>::new(
-        dataset_cfg.std.clone(),
-        dataset_cfg.mean.clone(),
-        &device,
-    ));
-    let normalize_val = Box::new(Normalize::<B>::new(
-        dataset_cfg.std.clone(),
-        dataset_cfg.mean.clone(),
-        &device,
-    ));
-    let (mut pipeline_train, mut pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
+    let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
         AugmentationBuilder::new().build(
             &shared.augmentations,
             dataset_cfg.mean.clone(),
             dataset_cfg.std.clone(),
             &device,
         );
-    pipeline_train = pipeline_train.prepend(vec![normalize_train]);
-    pipeline_val = pipeline_val.prepend(vec![normalize_val]);
     let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
 
     match model_name.as_str() {
