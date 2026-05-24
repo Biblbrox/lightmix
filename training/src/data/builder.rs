@@ -7,9 +7,12 @@ use crate::{
     augmentations::Pipeline,
     data::{
         batch::{FrameBatcher, ImageBatch},
-        dataloader::{InMemoryDataLoader, StreamingDataLoader},
+        dataloader::{
+            inmemory::InMemoryDataLoader,
+            strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
+            stream::StreamingDataLoader,
+        },
         mapper::LazyMapper,
-        strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
     },
 };
 

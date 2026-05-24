@@ -16,6 +16,60 @@ use rand::{SeedableRng, seq::SliceRandom};
 
 use crate::augmentations::Pipeline;
 
+/// Generic batch trait that works with any tensor dimensionality
+pub trait Batch<B: Backend>: Clone + Send + Sync {
+    type Data: Clone + Send + Sync;
+
+    fn data(&self) -> &Self::Data;
+    fn targets(&self) -> &Tensor<B, 1, Int>;
+
+    fn from_parts(data: Self::Data, targets: Tensor<B, 1, Int>) -> Self;
+    fn to_device(&self, device: &B::Device) -> Self;
+
+    /// Helper to select along batch dimension
+    fn select_data(&self, dim: usize, indices: Tensor<B, 1, Int>) -> Self::Data;
+
+    fn shuffle(&self, seed: u64) -> Self {
+        let b = self.targets().dims()[0];
+        let device = self.targets().device();
+
+        let mut indices: Vec<i32> = (0..b as i32).collect();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        indices.shuffle(&mut rng);
+
+        let idx = Tensor::<B, 1, Int>::from_ints(indices.as_slice(), &device);
+
+        let data = self.select_data(0, idx.clone());
+        let targets = self.targets().clone().select(0, idx);
+
+        Self::from_parts(data, targets)
+    }
+
+    fn subbatch(&self, indices: &[usize]) -> Self {
+        let idx_tensor = Tensor::<B, 1, Int>::from_ints(indices, &self.targets().device());
+
+        let data = self.select_data(0, idx_tensor.clone());
+        let targets = self.targets().clone().select(0, idx_tensor);
+
+        Self::from_parts(data, targets)
+    }
+
+    fn slice(&self, start: usize, end: usize, stride: usize) -> Self {
+        let device = self.targets().device();
+        let indices: Vec<i32> = (start as i32..end as i32).step_by(stride).collect();
+        let idx_tensor = Tensor::<B, 1, Int>::from_ints(indices.as_slice(), &device);
+
+        let data = self.select_data(0, idx_tensor.clone());
+        let targets = self.targets().clone().select(0, idx_tensor);
+
+        Self::from_parts(data, targets)
+    }
+
+    fn batch_size(&self) -> usize {
+        self.targets().dims()[0]
+    }
+}
+
 #[derive(Clone)]
 pub struct ImageBatch<B: Backend> {
     pub images: Tensor<B, 4>,
@@ -75,6 +129,11 @@ pub trait FrameBatcher<B: Backend>: Send + Sync {
         device: &B::Device,
     ) -> ImageBatch<B>;
 }
+
+/// Generic batcher trait
+//pub trait Batcher<B: Backend, T: Batch<B>>: Send + Sync {
+//    fn batch(&self, df: DataFrame, transforms: Option<Arc<Pipeline<B>>>, device: &B::Device) -> T;
+//}
 
 #[derive(Clone)]
 pub struct CloudBatch<B: Backend> {
