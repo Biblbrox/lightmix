@@ -1,5 +1,6 @@
 use burn::backend::Autodiff;
 
+pub mod results;
 pub mod utils;
 
 pub type GpuBackend = burn::backend::cuda::Cuda;

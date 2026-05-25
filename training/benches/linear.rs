@@ -4,11 +4,8 @@ use cubecl::benchmark::Benchmark;
 use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
 
 use burn::nn::{Linear, LinearConfig};
-use embed_former_train::linear::monarch::{MonarchLinear, MonarchLinearConfig};
-use embed_former_train::{
-    benchmarks::utils::print_bench_results,
-    benchmarks::{CpuBackend, GpuBackend},
-};
+use lightmix::linear::monarch::{MonarchLinear, MonarchLinearConfig};
+use lightmix::benchmarks::{CpuBackend, GpuBackend, utils::print_bench_results};
 
 // ── MonarchLinear benchmark ──────────────────────────────────────────────────
 pub struct MonarchLinearBenchmark<B: Backend> {
@@ -85,7 +82,7 @@ impl<B: Backend> Benchmark for LinearBenchmark<B> {
     }
 }
 
-fn monarch_benchmark_backend<B: Backend>(backend: &str) {
+fn monarch_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
     let device = B::Device::default();
 
     let batch_size = 64;
@@ -123,19 +120,24 @@ fn monarch_benchmark_backend<B: Backend>(backend: &str) {
     }
 
     print_bench_results(
-        format!("MonarchLinear ({})", backend).as_str(),
-        &results_monarch,
+        run_id, "linear", backend,
+        &format!("MonarchLinear ({})", backend),
         "embed_dim",
+        &results_monarch,
     );
     print_bench_results(
-        format!("Linear baseline ({})", backend).as_str(),
-        &results_linear,
+        run_id, "linear", backend,
+        &format!("Linear baseline ({})", backend),
         "embed_dim",
+        &results_linear,
     );
 }
 
 fn main() {
+    use lightmix::benchmarks::utils::generate_run_id;
+
     println!("=== MonarchLinear vs Linear Benchmarks ===");
-    monarch_benchmark_backend::<GpuBackend>("GPU");
-    monarch_benchmark_backend::<CpuBackend>("CPU");
+    let run_id = generate_run_id();
+    monarch_benchmark_backend::<GpuBackend>(&run_id, "GPU");
+    monarch_benchmark_backend::<CpuBackend>(&run_id, "CPU");
 }

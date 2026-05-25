@@ -37,16 +37,13 @@ indicatif = "0.18.4"
 tikv-jemallocator = "0.6.1"
 burn-vision = "0.21.0"
 rand = "0.10.1"
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
 log = "0.4.29"
 rand_distr = "0.6.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"
-
-[[bench]]
-name = "data"
-harness = false
 
 [[bench]]
 name = "embeddings"
@@ -65,8 +62,14 @@ name = "linear"
 harness = false
 
 [[bench]]
+name = "data"
+harness = false
+
+
+[[bench]]
 name = "models"
 harness = false
+
 
 [[bench]]
 name = "norm"
