@@ -9,7 +9,7 @@ use burn::{
 
 use crate::{
     conv::{ConvBNAct, ConvBNActConfig, MBConv, MBConvConfig},
-    data::batch::ImageBatch,
+    data::batch::Batch,
     embeddings::overlapped::{PatchEmbeddingOverlapped, PatchEmbeddingOverlappedConfig},
     mixing::cascadedattention::{CascadedGroupAttention, CascadedGroupAttentionConfig},
     models::ModelConfig,
@@ -158,6 +158,9 @@ pub struct EfficientViT<B: Backend> {
 
     classifier: ConvBNAct<B>,
     head: Linear<B>,
+
+    in_channels: usize,
+    image_size: usize,
 }
 
 impl<B: Backend> EfficientViT<B> {
@@ -249,6 +252,9 @@ impl EfficientViTConfig {
             classifier: ConvBNActConfig::new(c3, c3, 1).init(device),
 
             head: LinearConfig::new(c3, num_classes).init(device),
+
+            in_channels,
+            image_size: _image_size,
         }
     }
 }
@@ -312,22 +318,30 @@ impl<B: Backend> EfficientViT<B> {
 }
 
 impl<B: AutodiffBackend> TrainStep for EfficientViT<B> {
-    type Input = ImageBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: ImageBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let item = self.forward_classification(batch.images, batch.targets);
+    fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
+        let images = batch
+            .data
+            .clone()
+            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let item = self.forward_classification(images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
     }
 }
 
 impl<B: Backend> InferenceStep for EfficientViT<B> {
-    type Input = ImageBatch<B>;
+    type Input = Batch<B>;
     type Output = ClassificationOutput<B>;
 
-    fn step(&self, batch: ImageBatch<B>) -> ClassificationOutput<B> {
-        self.forward_classification(batch.images, batch.targets)
+    fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
+        let images = batch
+            .data
+            .clone()
+            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        self.forward_classification(images, batch.targets)
     }
 }
 

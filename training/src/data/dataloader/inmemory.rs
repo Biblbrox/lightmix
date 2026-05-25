@@ -18,15 +18,12 @@ use polars::lazy::{
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{FrameBatcher, ImageBatch},
+    data::batch::{Batch, Batcher},
 };
 
-///////////////////////////////////////////////////////////////////////////////
-// IN-MEMORY DATALOADER SECTION
-///////////////////////////////////////////////////////////////////////////////
 pub struct InMemoryDataLoader<B: Backend> {
     lf: LazyFrame,
-    batcher: Arc<dyn FrameBatcher<B>>,
+    batcher: Arc<dyn Batcher<B>>,
     transforms: Arc<Pipeline<B>>,
     items_total: usize,
     batch_size: usize,
@@ -37,7 +34,7 @@ pub struct InMemoryDataLoader<B: Backend> {
 impl<B: Backend> InMemoryDataLoader<B> {
     pub fn new(
         lf: impl Into<LazyFrame>,
-        batcher: Arc<dyn FrameBatcher<B>>,
+        batcher: Arc<dyn Batcher<B>>,
         transforms: Arc<Pipeline<B>>,
         batch_size: usize,
         num_workers: usize,
@@ -67,8 +64,8 @@ impl<B: Backend> InMemoryDataLoader<B> {
     }
 }
 
-impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
-    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<ImageBatch<B>> + 'a> {
+impl<B: Backend> DataLoader<B, Batch<B>> for InMemoryDataLoader<B> {
+    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
         if self.num_workers > 0 {
             let (tx, rx) = mpsc::sync_channel(4 * self.num_workers);
             for idx in 0..self.num_workers {
@@ -103,7 +100,7 @@ impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
                             );
 
                             if result.is_err() {
-                                break; // Receiver dropped
+                                break;
                             }
                         } else {
                             break;
@@ -142,7 +139,7 @@ impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
         self.items_total
     }
 
-    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(Self {
             lf: self.lf.clone(),
             batcher: self.batcher.clone(),
@@ -154,7 +151,7 @@ impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
         })
     }
 
-    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
         let len = end.saturating_sub(start);
 
         Arc::new(Self {
@@ -171,8 +168,8 @@ impl<B: Backend> DataLoader<B, ImageBatch<B>> for InMemoryDataLoader<B> {
 
 pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
     lf: LazyFrame,
-    channel: Option<Arc<Mutex<Receiver<ImageBatch<B>>>>>,
-    batcher: Arc<dyn FrameBatcher<B>>,
+    channel: Option<Arc<Mutex<Receiver<Batch<B>>>>>,
+    batcher: Arc<dyn Batcher<B>>,
     transforms: Arc<Pipeline<B>>,
     batch_size: usize,
     items_processed: usize,
@@ -181,7 +178,7 @@ pub struct InMemoryDataLoaderIterator<'a, B: Backend> {
 }
 
 impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
-    type Item = ImageBatch<B>;
+    type Item = Batch<B>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(recv) = &self.channel {
@@ -216,7 +213,7 @@ impl<'a, B: Backend> Iterator for InMemoryDataLoaderIterator<'a, B> {
     }
 }
 
-impl<'a, B: Backend> DataLoaderIterator<ImageBatch<B>> for InMemoryDataLoaderIterator<'a, B> {
+impl<'a, B: Backend> DataLoaderIterator<Batch<B>> for InMemoryDataLoaderIterator<'a, B> {
     fn progress(&self) -> Progress {
         Progress::new(self.items_processed, self.items_total)
     }

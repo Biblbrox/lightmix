@@ -6,9 +6,9 @@ use burn::{
 };
 use polars::prelude::*;
 
-use crate::data::batch::{CloudBatch, CloudBatcher};
+use crate::data::batch::{Batch, Batcher};
 
-const POINTCOL: &str = "image"; // TODO: For now, I'll use "image", then I'll make the naming better
+const POINTCOL: &str = "image";
 const LABELCOL: &str = "label";
 
 const NUM_POINTS: usize = 1024;
@@ -22,11 +22,15 @@ impl ModelNet40Batcher {
     }
 }
 
-impl<B: Backend> CloudBatcher<B> for ModelNet40Batcher {
-    fn batch(&self, df: DataFrame, device: &B::Device) -> CloudBatch<B> {
+impl<B: Backend> Batcher<B> for ModelNet40Batcher {
+    fn batch(
+        &self,
+        df: DataFrame,
+        _transforms: Arc<crate::augmentations::Pipeline<B>>,
+        device: &B::Device,
+    ) -> Batch<B> {
         let batch_size = df.height();
 
-        // ── Points ────────────────────────────────────────────────────────────
         let total_floats = batch_size * NUM_POINTS * NUM_CHANNELS;
         let mut pointbuf: Vec<u8> = Vec::with_capacity(total_floats * 4);
 
@@ -45,7 +49,6 @@ impl<B: Backend> CloudBatcher<B> for ModelNet40Batcher {
 
         let points = Tensor::<B, 3>::from_data(pointdata, device);
 
-        // ── Labels ────────────────────────────────────────────────────────────
         let labelbuf: Vec<i32> = df
             .column(LABELCOL)
             .unwrap()
@@ -56,6 +59,9 @@ impl<B: Backend> CloudBatcher<B> for ModelNet40Batcher {
 
         let targets = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        CloudBatch { points, targets }
+        Batch {
+            data: points.flatten::<1>(0, -1),
+            targets,
+        }
     }
 }

@@ -8,7 +8,7 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{FrameBatcher, ImageBatch},
+    data::batch::{Batch, Batcher},
 };
 
 const IMAGECOL: &str = "image";
@@ -22,16 +22,10 @@ impl FashionMnistBatcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for FashionMnistBatcher {
-    fn batch(
-        &self,
-        df: DataFrame,
-        transforms: Arc<Pipeline<B>>,
-        device: &B::Device,
-    ) -> ImageBatch<B> {
+impl<B: Backend> Batcher<B> for FashionMnistBatcher {
+    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
-        // Image handling
         let imagebuf = df
             .column(IMAGECOL)
             .unwrap()
@@ -50,7 +44,6 @@ impl<B: Backend> FrameBatcher<B> for FashionMnistBatcher {
                 .div_scalar(255),
         );
 
-        // Label handling
         let labelbuf: Vec<i64> = df
             .column(LABELCOL)
             .unwrap()
@@ -60,8 +53,8 @@ impl<B: Backend> FrameBatcher<B> for FashionMnistBatcher {
             .collect();
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        ImageBatch {
-            images,
+        Batch {
+            data: images.flatten::<1>(0, -1),
             targets: labels,
         }
     }

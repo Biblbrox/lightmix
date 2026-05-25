@@ -5,7 +5,7 @@ use burn::{
     train::{ClassificationOutput, InferenceStep, TrainStep},
 };
 
-use crate::data::batch::ImageBatch;
+use crate::data::batch::Batch;
 
 pub mod efficientvit;
 pub mod fast_vit;
@@ -14,9 +14,9 @@ pub mod vit;
 
 pub trait ModelConfig<B: Backend> {
     type ValidModel: Module<B>
-        + InferenceStep<Input = ImageBatch<B>, Output = ClassificationOutput<B>>;
+        + InferenceStep<Input = Batch<B>, Output = ClassificationOutput<B>>;
     type TrainModel: AutodiffModule<Autodiff<B>, InnerModule = Self::ValidModel>
-        + TrainStep<Input = ImageBatch<Autodiff<B>>, Output = ClassificationOutput<Autodiff<B>>>
+        + TrainStep<Input = Batch<Autodiff<B>>, Output = ClassificationOutput<Autodiff<B>>>
         + core::fmt::Display
         + 'static;
 

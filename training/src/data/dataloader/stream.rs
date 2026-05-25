@@ -9,14 +9,14 @@ use polars::prelude::*;
 use crate::{
     augmentations::Pipeline,
     data::{
-        batch::{FrameBatcher, ImageBatch},
+        batch::{Batch, Batcher},
         dataloader::strategy::FrameBatchStrategy,
     },
 };
 
 pub struct StreamingDataLoader<B: Backend> {
     dataset: LazyFrame,
-    batcher: Arc<dyn FrameBatcher<B>>,
+    batcher: Arc<dyn Batcher<B>>,
     strategy: Box<dyn FrameBatchStrategy>,
     transforms: Arc<Pipeline<B>>,
     total_items: usize,
@@ -39,7 +39,7 @@ impl<B: Backend> Clone for StreamingDataLoader<B> {
 impl<B: Backend> StreamingDataLoader<B> {
     pub fn new(
         dataset: impl Into<LazyFrame>,
-        batcher: Arc<dyn FrameBatcher<B>>,
+        batcher: Arc<dyn Batcher<B>>,
         strategy: Box<dyn FrameBatchStrategy>,
         transforms: Arc<Pipeline<B>>,
         device: B::Device,
@@ -67,11 +67,11 @@ impl<B: Backend> StreamingDataLoader<B> {
     }
 }
 
-impl<B> DataLoader<B, ImageBatch<B>> for StreamingDataLoader<B>
+impl<B> DataLoader<B, Batch<B>> for StreamingDataLoader<B>
 where
     B: Backend,
 {
-    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<ImageBatch<B>> + 'a> {
+    fn iter<'a>(&'a self) -> Box<dyn DataLoaderIterator<Batch<B>> + 'a> {
         Box::new(StreamingDataLoaderIterator::new(
             self.dataset.clone(),
             self.batcher.clone(),
@@ -86,26 +86,25 @@ where
         self.total_items
     }
 
-    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    fn to_device(&self, device: &B::Device) -> Arc<dyn DataLoader<B, Batch<B>>> {
         let mut loader = self.clone();
         loader.device = device.clone();
         Arc::new(loader)
     }
 
-    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    fn slice(&self, start: usize, end: usize) -> Arc<dyn DataLoader<B, Batch<B>>> {
         let mut loader = self.clone();
         loader.dataset = self
             .dataset
             .clone()
             .slice(start as i64, (end - start) as u32);
-        loader.total_items = end - start; // derive from slice bounds, no rescan
+        loader.total_items = end - start;
         Arc::new(loader)
     }
 }
 
-/// Basically a tracking iterator over DataFrame batches with a method to calculate progress
 pub struct StreamingDataLoaderIterator<B: Backend> {
-    batcher: Arc<dyn FrameBatcher<B>>,
+    batcher: Arc<dyn Batcher<B>>,
     strategy: Box<dyn FrameBatchStrategy>,
     current_batch: usize,
     items_processed: usize,
@@ -117,7 +116,7 @@ pub struct StreamingDataLoaderIterator<B: Backend> {
 impl<B: Backend> StreamingDataLoaderIterator<B> {
     pub fn new(
         dataset: LazyFrame,
-        batcher: Arc<dyn FrameBatcher<B>>,
+        batcher: Arc<dyn Batcher<B>>,
         mut strategy: Box<dyn FrameBatchStrategy>,
         transforms: Arc<Pipeline<B>>,
         total_items: usize,
@@ -146,7 +145,7 @@ impl<B: Backend> StreamingDataLoaderIterator<B> {
 }
 
 impl<B: Backend> Iterator for StreamingDataLoaderIterator<B> {
-    type Item = ImageBatch<B>;
+    type Item = Batch<B>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.current_batch += 1;
@@ -164,7 +163,7 @@ impl<B: Backend> Iterator for StreamingDataLoaderIterator<B> {
     }
 }
 
-impl<B: Backend> DataLoaderIterator<ImageBatch<B>> for StreamingDataLoaderIterator<B> {
+impl<B: Backend> DataLoaderIterator<Batch<B>> for StreamingDataLoaderIterator<B> {
     fn progress(&self) -> Progress {
         Progress::new(self.items_processed, self.total_items)
     }
