@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use burn::{prelude::Tensor, tensor::backend::Backend};
 
 pub mod builder;
+pub mod cloud;
 pub mod colors;
 pub mod mix;
 pub mod normalize;

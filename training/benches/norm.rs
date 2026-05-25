@@ -5,7 +5,7 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use embed_former_train::norm::{DynamicERF, DynamicERFConfig};
+use lightmix::norm::{DynamicERF, DynamicERFConfig};
 
 pub struct DerfBenchmark<B: Backend> {
     batch_size: usize,
@@ -97,10 +97,10 @@ fn main() {
         profile::TimingMethod,
     };
 
-    use embed_former_train::benchmarks::utils::print_bench_results;
-    use embed_former_train::benchmarks::{GpuAutodiffBackend, GpuBackend, GpuDevice};
+    use lightmix::benchmarks::{GpuAutodiffBackend, GpuBackend, GpuDevice, utils::{print_bench_results, generate_run_id}};
 
     let device = GpuDevice::default();
+    let run_id = generate_run_id();
 
     let batches = [8; 5];
     let embed_dim = [64, 128, 256, 512, 1024];
@@ -164,12 +164,28 @@ fn main() {
         layer_norm_results_autodiff.push((embed as u32, computed));
     }
 
-    print_bench_results("ERF", &erf_results, "embed_dim");
-    print_bench_results("LayerNorm", &layer_norm_results, "embed_dim");
-    print_bench_results("ERF (Autodiff)", &erf_results_autodiff, "embed_dim");
     print_bench_results(
-        "LayerNorm (Autodiff)",
-        &layer_norm_results_autodiff,
+        &run_id, "norm", "GPU",
+        "ERF",
         "embed_dim",
+        &erf_results,
+    );
+    print_bench_results(
+        &run_id, "norm", "GPU",
+        "LayerNorm",
+        "embed_dim",
+        &layer_norm_results,
+    );
+    print_bench_results(
+        &run_id, "norm", "Autodiff GPU",
+        "ERF (Autodiff)",
+        "embed_dim",
+        &erf_results_autodiff,
+    );
+    print_bench_results(
+        &run_id, "norm", "Autodiff GPU",
+        "LayerNorm (Autodiff)",
+        "embed_dim",
+        &layer_norm_results_autodiff,
     );
 }

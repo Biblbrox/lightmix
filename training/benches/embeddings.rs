@@ -4,7 +4,7 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use embed_former_train::tokenization::vit::{PatchEmbedding, PatchEmbeddingConfig};
+use lightmix::embeddings::vit::{PatchEmbedding, PatchEmbeddingConfig};
 
 pub struct PatchEmbeddingBenchmark<B: Backend> {
     pub batch_size: usize,
@@ -70,10 +70,10 @@ fn main() {
         profile::TimingMethod,
     };
 
-    use embed_former_train::benchmarks::utils::print_bench_results;
-    use embed_former_train::benchmarks::{GpuBackend, GpuDevice};
+    use lightmix::benchmarks::{GpuBackend, GpuDevice, utils::{print_bench_results, generate_run_id}};
 
     let device = GpuDevice::default();
+    let run_id = generate_run_id();
 
     let batches = [8; 5];
     let embed_dim = [64, 128, 256, 512, 1024];
@@ -99,5 +99,10 @@ fn main() {
         results.push((embed as u32, computed));
     }
 
-    print_bench_results("Patcher", &results, "embed_dim");
+    print_bench_results(
+        &run_id, "embeddings", "GPU",
+        "Patcher",
+        "embed_dim",
+        &results,
+    );
 }

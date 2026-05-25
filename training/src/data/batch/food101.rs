@@ -8,7 +8,7 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{FrameBatcher, ImageBatch},
+    data::batch::{Batch, Batcher},
 };
 
 const IMAGECOL: &str = "image";
@@ -22,16 +22,10 @@ impl Food101Batcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for Food101Batcher {
-    fn batch(
-        &self,
-        df: DataFrame,
-        transforms: Arc<Pipeline<B>>,
-        device: &B::Device,
-    ) -> ImageBatch<B> {
+impl<B: Backend> Batcher<B> for Food101Batcher {
+    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
-        // Image handling
         let total_images = batch_size * 96 * 96 * 3;
 
         let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
@@ -55,14 +49,14 @@ impl<B: Backend> FrameBatcher<B> for Food101Batcher {
 
         let images = transforms.execute(
             Tensor::<B, 4>::from_data(imagedata, device)
-                .permute([0, 3, 1, 2]) // [B,H,W,C] → [B,C,H,W]
+                .permute([0, 3, 1, 2])
                 .div_scalar(255),
         );
 
         let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
 
-        ImageBatch {
-            images,
+        Batch {
+            data: images.flatten::<1>(0, -1),
             targets: labels,
         }
     }

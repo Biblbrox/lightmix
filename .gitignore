@@ -46,3 +46,4 @@ Cargo.lock
 *.log
 .env
 *.db
+*.csv

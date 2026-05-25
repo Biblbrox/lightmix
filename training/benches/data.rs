@@ -1,19 +1,19 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use embed_former_train::augmentations::colors::ColorJitter;
-use embed_former_train::augmentations::normalize::Normalize;
-use embed_former_train::augmentations::rotation::RandomAffine;
-use embed_former_train::augmentations::{Augmentation, Pipeline};
-use embed_former_train::benchmarks::{GpuBackend, GpuDevice};
-use embed_former_train::data::batch::cifar100::Cifar100Batcher;
-use embed_former_train::data::batch::imagenet1k::ImageNet1kBatcher;
-use embed_former_train::data::builder::StreamingDataLoaderBuilder;
-use embed_former_train::data::dataset::cifar100::Cifar100Dataset;
-use embed_former_train::data::dataset::imagenet1k::ImageNet1kDataset;
-use embed_former_train::data::dataset::{LazyDataset, LazyFiletype};
-use embed_former_train::data::strategy::buffered::BufferedBatchStrategy;
 use indicatif::ProgressBar;
+use lightmix::augmentations::colors::ColorJitter;
+use lightmix::augmentations::normalize::Normalize;
+use lightmix::augmentations::rotation::RandomAffine;
+use lightmix::augmentations::{Augmentation, Pipeline};
+use lightmix::benchmarks::{GpuBackend, GpuDevice};
+use lightmix::data::batch::cifar100::Cifar100Batcher;
+use lightmix::data::batch::imagenet1k::ImageNet1kBatcher;
+use lightmix::data::builder::StreamingDataLoaderBuilder;
+use lightmix::data::dataloader::strategy::buffered::BufferedBatchStrategy;
+use lightmix::data::dataset::cifar100::Cifar100Dataset;
+use lightmix::data::dataset::imagenet1k::ImageNet1kDataset;
+use lightmix::data::dataset::{LazyDataset, LazyFiletype};
 use polars::prelude::PlRefPath;
 
 fn main() {

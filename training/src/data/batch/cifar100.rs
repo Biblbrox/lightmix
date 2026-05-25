@@ -8,7 +8,7 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{FrameBatcher, ImageBatch},
+    data::batch::{Batch, Batcher},
 };
 
 const IMAGECOL: &str = "image";
@@ -22,13 +22,8 @@ impl Cifar100Batcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
-    fn batch(
-        &self,
-        df: DataFrame,
-        transforms: Arc<Pipeline<B>>,
-        device: &B::Device,
-    ) -> ImageBatch<B> {
+impl<B: Backend> Batcher<B> for Cifar100Batcher {
+    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
         let total_images = batch_size * 32 * 32 * 3;
@@ -40,10 +35,8 @@ impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
             .into_no_null_iter()
             .for_each(|chunk| imagebuf.extend_from_slice(chunk));
 
-        // Image handling
         let imagedata = TensorData::from_bytes_vec(imagebuf, [batch_size, 32, 32, 3], DType::U8)
             .convert_dtype(DType::F32);
-        // Label handling
         let labelbuf: Vec<i64> = df
             .column(LABELCOL)
             .unwrap()
@@ -59,8 +52,8 @@ impl<B: Backend> FrameBatcher<B> for Cifar100Batcher {
                 .div_scalar(255),
         );
 
-        ImageBatch {
-            images,
+        Batch {
+            data: images.flatten::<1>(0, -1),
             targets: labels,
         }
     }

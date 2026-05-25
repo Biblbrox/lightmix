@@ -9,7 +9,7 @@ use std::{
 use polars::prelude::*;
 use rand::RngExt;
 
-use crate::data::{mapper::FrameMapper, strategy::FrameBatchStrategy};
+use crate::data::{dataloader::strategy::FrameBatchStrategy, mapper::FrameMapper};
 
 pub struct BufferedBatchStrategy {
     recv: Option<Mutex<Receiver<Option<DataFrame>>>>,

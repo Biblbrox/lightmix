@@ -26,16 +26,13 @@ use burn::{
 };
 use serde::Serialize;
 
-use crate::config::DatasetConfig;
 use crate::{
     augmentations::Pipeline,
-    data::{
-        batch::cifar100::Cifar100Batcher, dataset::LazyDataset,
-        strategy::buffered::BufferedBatchStrategy,
-    },
+    data::{batch::cifar100::Cifar100Batcher, dataset::LazyDataset},
     metrics::MetricsHandler,
     models::ModelConfig,
 };
+use crate::{config::DatasetConfig, data::dataloader::strategy::buffered::BufferedBatchStrategy};
 use crate::{config::SharedConfig, data::builder::StreamingDataLoaderBuilder};
 
 pub trait Saveable: Serialize {

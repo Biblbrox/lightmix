@@ -6,15 +6,18 @@ use polars::prelude::*;
 use crate::{
     augmentations::Pipeline,
     data::{
-        batch::{FrameBatcher, ImageBatch},
-        dataloader::{InMemoryDataLoader, StreamingDataLoader},
+        batch::{Batch, Batcher},
+        dataloader::{
+            inmemory::InMemoryDataLoader,
+            strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
+            stream::StreamingDataLoader,
+        },
         mapper::LazyMapper,
-        strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
     },
 };
 
 pub struct StreamingDataLoaderBuilder<B: Backend> {
-    batcher: Arc<dyn FrameBatcher<B>>,
+    batcher: Arc<dyn Batcher<B>>,
     strategy: Option<Box<dyn FrameBatchStrategy>>,
     mapper: Option<LazyMapper>,
     transforms: Option<Arc<Pipeline<B>>>,
@@ -22,7 +25,7 @@ pub struct StreamingDataLoaderBuilder<B: Backend> {
 }
 
 impl<B: Backend> StreamingDataLoaderBuilder<B> {
-    pub fn new(batcher: Arc<dyn FrameBatcher<B>>) -> Self {
+    pub fn new(batcher: Arc<dyn Batcher<B>>) -> Self {
         Self {
             batcher,
             strategy: None,
@@ -52,7 +55,7 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
         self
     }
 
-    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(StreamingDataLoader::new(
             dataset,
             self.batcher,
@@ -66,7 +69,7 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
 }
 
 pub struct InMemoryDataLoaderBuilder<B: Backend> {
-    batcher: Arc<dyn FrameBatcher<B>>,
+    batcher: Arc<dyn Batcher<B>>,
     transforms: Option<Arc<Pipeline<B>>>,
     batch_size: Option<usize>,
     num_workers: Option<usize>,
@@ -74,7 +77,7 @@ pub struct InMemoryDataLoaderBuilder<B: Backend> {
 }
 
 impl<B: Backend> InMemoryDataLoaderBuilder<B> {
-    pub fn new(batcher: Arc<dyn FrameBatcher<B>>) -> Self {
+    pub fn new(batcher: Arc<dyn Batcher<B>>) -> Self {
         Self {
             batcher,
             transforms: None,
@@ -104,7 +107,7 @@ impl<B: Backend> InMemoryDataLoaderBuilder<B> {
         self
     }
 
-    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, ImageBatch<B>>> {
+    pub fn build(self, dataset: LazyFrame) -> Arc<dyn DataLoader<B, Batch<B>>> {
         Arc::new(InMemoryDataLoader::new(
             dataset,
             self.batcher,

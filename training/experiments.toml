@@ -331,42 +331,47 @@ activation = "relu"
 
 [augmentations]
 
-[[augmentations.transforms]]
+
+[[augmentations.transforms_val]]
+name = "normalize"
+
+[[augmentations.transforms_train]]
+name = "normalize"
+
+[[augmentations.transforms_train]]
 name = "random_flip"
 probability = 0.5
 orientation = "horizontal"
 
-
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "random_flip"
 probability = 0.5
 orientation = "vertical"
 
+# [[augmentations.transforms_train]]
+# name = "random_affine"
+# probability = 0.5
+# degrees = 30.0
 
-[[augmentations.transforms]]
-name = "random_affine"
-probability = 0.5
-degrees = 30.0
-
-# [[augmentations.transforms]]
+# [[augmentations.transforms_train]]
 # name = "color_jitter"
 # brightness = 0.4
 # contrast = 0.4
 # saturation = 0.1
 
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "random_erasing"
 probability = 0.5
 min_scale = 0.02
 max_scale = 0.33
 
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "gaussian_blur"
 probability = 0.5
 kernel_size = 7
 min_sigma = 0.1
 max_sigma = 2.0
 
-[[augmentations.transforms]]
+[[augmentations.transforms_train]]
 name = "random_grayscale"
 probability = 0.5
