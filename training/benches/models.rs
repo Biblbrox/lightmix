@@ -4,15 +4,15 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use embed_former_train::models::{
+use lightmix::models::{
     fast_vit::{FastViT, FastViTConfig},
     vit::{ViT, ViTConfig},
 };
 
 use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
 
-use embed_former_train::benchmarks::GpuBackend;
-use embed_former_train::benchmarks::utils::print_bench_results;
+use lightmix::benchmarks::GpuBackend;
+use lightmix::benchmarks::utils::print_bench_results;
 
 pub struct FastViTBenchmark<B: Backend> {
     pub num_patches: usize,

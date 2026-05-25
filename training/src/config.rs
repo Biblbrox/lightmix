@@ -1,188 +1,301 @@
-use std::{fs::File, io::Write, path::Path};
+use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
-use crate::augmentations::builder::TransformConfig;
+use crate::augmentations::builder::AugmentationConfig;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Config {
+// shared across all experiments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedConfig {
     pub random_seed: i64,
     pub learning_rate: f64,
     pub cache_dir: String,
-    pub num_classes: i64,
-    pub img_size: i64,
-    pub in_channels: i64,
-    pub batch_size: i64,
-    pub val_batch_size: i64,
-    pub epochs: i64,
-    pub patch_size: i64,
-    pub num_heads: i64,
-    pub dropout: f64,
-    pub hidden_dim: i64,
-    pub adam_weight_decay: f64,
-    pub adam_betas: [f64; 2],
-    pub mean: Vec<f32>,
-    pub std: Vec<f32>,
-    pub activation: String,
-    pub num_encoders: i64,
-    pub embed_dim: i64,
     pub num_workers: i64,
     pub continue_training: bool,
     pub resume_epoch: i64,
-    pub sinkhorn_temp: f64,
-    pub kernel_size: Option<i64>,
-    pub augmentations: Vec<TransformConfig>,
+    pub active_dataset: String,
+    pub active_model: String,
+    pub augmentations: AugmentationConfig,
 }
 
-impl Config {
-    pub fn parse(
-        config_path: &Path,
-        dataset: &str,
-        model: &str,
-        local_config_path: Option<&Path>,
-    ) -> Self {
-        let file = std::fs::read_to_string(config_path).unwrap();
-        let mut config: Table = file.parse().unwrap();
+// per-dataset section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatasetConfig {
+    pub num_classes: usize,
+    pub img_size: usize,
+    pub in_channels: usize,
+    pub batch_size: usize,
+    pub val_batch_size: usize,
+    pub epochs: usize,
+    pub mean: Vec<f32>,
+    pub std: Vec<f32>,
+}
 
-        if let Some(path) = local_config_path {
-            let file = std::fs::read_to_string(path).unwrap();
-            let localconfig: Table = file.parse().unwrap();
-            Config::override_conf(&mut config, &localconfig);
-        }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OptimizerConfig {
+    pub adam_weight_decay: f64,
+    pub adam_betas: [f64; 2],
+}
 
-        let augmentations = config
-            .get("augmentations")
-            .and_then(|v| v.as_table())
-            .and_then(|t| t.get("transforms"))
-            .and_then(|v| v.as_array())
-            .map(|transforms| {
-                transforms
-                    .iter()
-                    .filter_map(|entry| {
-                        let table = entry.as_table()?;
-                        let name = table.get("name")?.as_str()?.to_string();
+pub struct ParsedConfig {
+    pub shared: SharedConfig,
+    pub dataset: DatasetConfig,
+    pub model_table: toml::Table, // raw, to be deserialized into the concrete model type
+}
 
-                        // Collect all fields except "name" into params
-                        let params: toml::map::Map<String, toml::Value> = table
-                            .iter()
-                            .filter(|(k, _)| k.as_str() != "name")
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect();
-
-                        Some(TransformConfig {
-                            name,
-                            params: toml::Value::Table(params),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-
-        Config {
-            // Global params
-            random_seed: config["random_seed"].as_integer().unwrap(),
-            learning_rate: config["learning_rate"].as_float().unwrap(),
-            cache_dir: config["cache_dir"].as_str().unwrap().into(),
-            num_workers: config["num_workers"].as_integer().unwrap(),
-            continue_training: config["continue_training"].as_bool().unwrap(),
-            resume_epoch: config["resume_epoch"].as_integer().unwrap(),
-
-            // Dataset params
-            num_classes: config[dataset]["num_classes"].as_integer().unwrap(),
-            img_size: config[dataset]["img_size"].as_integer().unwrap(),
-            in_channels: config[dataset]["in_channels"].as_integer().unwrap(),
-            mean: config[dataset]["mean"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_float().unwrap() as f32)
-                .collect(),
-            std: config[dataset]["std"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_float().unwrap() as f32)
-                .collect(),
-            batch_size: config[dataset]["batch_size"].as_integer().unwrap(),
-            val_batch_size: config[dataset]["val_batch_size"].as_integer().unwrap(),
-            epochs: config[dataset]["epochs"].as_integer().unwrap(),
-
-            // Model params
-            patch_size: config[model]["patch_size"].as_integer().unwrap(),
-            num_heads: config[model]["num_heads"].as_integer().unwrap(),
-            dropout: config[model]["dropout"].as_float().unwrap(),
-            hidden_dim: config[model]["hidden_dim"].as_integer().unwrap(),
-            adam_weight_decay: config[model]["adam_weight_decay"].as_float().unwrap(),
-            adam_betas: config[model]["adam_betas"]
-                .as_array()
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .clone()
-                .map(|v| v.as_float().unwrap()),
-            activation: config[model]["activation"].as_str().unwrap().into(),
-            num_encoders: config[model]["num_encoders"].as_integer().unwrap(),
-            kernel_size: match config[model].get("kernel_size") {
-                Some(v) => Some(v.as_integer().unwrap()),
-                None => None,
-            },
-            embed_dim: config[model]["embed_dim"].as_integer().unwrap(),
-            sinkhorn_temp: config[model]["sinkhorn_temp"].as_float().unwrap(),
-            augmentations,
-        }
-    }
-
-    pub fn save(&self, path: &Path) {
-        let mut file = File::create(path).unwrap();
-
-        let config = toml::to_string_pretty(self);
-        file.write_all(config.unwrap().as_bytes()).unwrap();
-    }
-
-    fn override_conf(mainconf: &mut Table, localconf: &Table) {
-        for (localkey, localvalue) in localconf {
-            match mainconf.get_mut(localkey) {
-                Some(mainvalue) => {
-                    if let (Value::Table(localtable), Value::Table(maintable)) =
-                        (localvalue, mainvalue)
-                    {
-                        Config::override_conf(maintable, localtable);
-                    } else {
-                        let _ = mainconf.insert(localkey.clone(), localvalue.clone());
-                    }
-                }
-                None => {
+fn override_conf(mainconf: &mut Table, localconf: &Table) {
+    for (localkey, localvalue) in localconf {
+        match mainconf.get_mut(localkey) {
+            Some(mainvalue) => {
+                if let (Value::Table(localtable), Value::Table(maintable)) = (localvalue, mainvalue)
+                {
+                    override_conf(maintable, localtable);
+                } else {
                     let _ = mainconf.insert(localkey.clone(), localvalue.clone());
                 }
+            }
+            None => {
+                let _ = mainconf.insert(localkey.clone(), localvalue.clone());
             }
         }
     }
 }
 
+impl ParsedConfig {
+    pub fn unpack(self) -> (SharedConfig, DatasetConfig, toml::Table) {
+        (self.shared, self.dataset, self.model_table)
+    }
+
+    pub fn parse(path: &Path, local: Option<&Path>) -> Self {
+        let file = std::fs::read_to_string(path).unwrap();
+        let mut table: toml::Table = file.parse().unwrap();
+
+        if let Some(local_path) = local {
+            let local_file = std::fs::read_to_string(local_path).unwrap();
+            let local_table: toml::Table = local_file.parse().unwrap();
+            override_conf(&mut table, &local_table);
+        }
+
+        let shared: SharedConfig = table.clone().try_into().unwrap();
+        let dataset = table[&shared.active_dataset].clone().try_into().unwrap();
+        let model_table = table[&shared.active_model].as_table().unwrap().clone();
+
+        ParsedConfig {
+            shared,
+            dataset,
+            model_table,
+        }
+    }
+
+    pub fn model<M: DeserializeOwned>(&self) -> M {
+        self.model_table.clone().try_into().unwrap()
+    }
+
+    pub fn optimizer(&self) -> OptimizerConfig {
+        self.model_table.clone().try_into().unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::env::current_dir;
+    use crate::config::{DatasetConfig, OptimizerConfig, ParsedConfig, SharedConfig};
+    use crate::models::fast_vit::FastViTConfig;
+    use tempfile::TempDir;
 
-    use crate::config::Config;
+    fn create_test_config() -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("experiments.toml");
 
-    #[test]
-    fn test_parse() {
-        let cwd = current_dir().unwrap();
-        let path = cwd.join("experiments.toml");
-        let conf = Config::parse(&path, "mnist", "model", None);
+        let config_content = r#"
+random_seed = 42
+learning_rate = 0.001
+cache_dir = "/tmp/cache"
+num_workers = 4
+continue_training = false
+resume_epoch = 0
+active_dataset = "mnist"
+active_model = "model"
 
-        println!("{:?}", conf);
+[augmentations]
+
+[[augmentations.transforms_train]]
+name = "random_flip"
+probability = 0.5
+orientation = "horizontal"
+
+[[augmentations.transforms_train]]
+name = "color_jitter"
+brightness = 0.2
+contrast = 0.2
+saturation = 0.2
+
+[mnist]
+num_classes = 10
+img_size = 28
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+batch_size = 64
+val_batch_size = 128
+epochs = 100
+
+[model]
+patch_size = 7
+num_heads = 8
+dropout = 0.1
+hidden_dim = 256
+adam_weight_decay = 0.0001
+adam_betas = [0.9, 0.999]
+activation = "gelu"
+num_encoders = 6
+embed_dim = 512
+sinkhorn_temp = 0.1
+"#;
+
+        std::fs::write(&config_path, config_content).unwrap();
+        (dir, config_path)
+    }
+
+    fn create_test_local_config() -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let local_config_path = dir.path().join("experiments.local.toml");
+
+        let local_config_content = r#"
+[mnist]
+batch_size = 8
+epochs = 10
+
+[model]
+dropout = 0.2
+hidden_dim = 128
+"#;
+
+        std::fs::write(&local_config_path, local_config_content).unwrap();
+        (dir, local_config_path)
     }
 
     #[test]
-    fn test_parse_override() {
-        let cwd = current_dir().unwrap();
-        let path = cwd.join("experiments.toml");
-        let localpath = cwd.join("experiments.local.toml");
-        let conf = Config::parse(&path, "mnist", "model", Some(&localpath));
+    fn test_parse_basic_shared_config() {
+        let (_dir, config_path) = create_test_config();
+        let config = ParsedConfig::parse(&config_path, None);
+        let shared: SharedConfig = config.shared;
 
-        assert_eq!(conf.batch_size, 8);
-        println!("{:?}", conf);
+        assert_eq!(shared.random_seed, 42);
+        assert_eq!(shared.learning_rate, 0.001);
+        assert_eq!(shared.cache_dir, "/tmp/cache");
+        assert_eq!(shared.num_workers, 4);
+        assert_eq!(shared.continue_training, false);
+        assert_eq!(shared.resume_epoch, 0);
+        assert_eq!(shared.active_dataset, "mnist");
+        assert_eq!(shared.active_model, "model");
+    }
+
+    #[test]
+    fn test_parse_basic_dataset_config() {
+        let (_dir, config_path) = create_test_config();
+        let config = ParsedConfig::parse(&config_path, None);
+        let dataset: DatasetConfig = config.dataset;
+
+        assert_eq!(dataset.num_classes, 10);
+        assert_eq!(dataset.img_size, 28);
+        assert_eq!(dataset.in_channels, 1);
+        assert_eq!(dataset.mean, vec![0.1307]);
+        assert_eq!(dataset.std, vec![0.3081]);
+        assert_eq!(dataset.batch_size, 64);
+        assert_eq!(dataset.val_batch_size, 128);
+        assert_eq!(dataset.epochs, 100);
+    }
+
+    #[test]
+    fn test_parse_basic_model_config() {
+        let (_dir, config_path) = create_test_config();
+        let config = ParsedConfig::parse(&config_path, None);
+        let model: FastViTConfig = config.model();
+
+        assert_eq!(model.patch_size, 7);
+        assert_eq!(model.num_heads, 8);
+        assert_eq!(model.dropout, 0.1);
+        assert_eq!(model.hidden_dim, 256);
+        assert_eq!(model.activation, "gelu");
+        assert_eq!(model.num_encoders, 6);
+        assert_eq!(model.embed_dim, 512);
+        assert_eq!(model.sinkhorn_temp, 0.1);
+    }
+
+    #[test]
+    fn test_parse_optimizer_config() {
+        let (_dir, config_path) = create_test_config();
+        let config = ParsedConfig::parse(&config_path, None);
+        let optimizer: OptimizerConfig = config.optimizer();
+
+        assert_eq!(optimizer.adam_weight_decay, 0.0001);
+        assert_eq!(optimizer.adam_betas, [0.9, 0.999]);
+    }
+
+    #[test]
+    fn test_parse_augmentations() {
+        let (_dir, config_path) = create_test_config();
+        let config = ParsedConfig::parse(&config_path, None);
+        let shared: SharedConfig = config.shared;
+        let transforms = &shared.augmentations.transforms_train;
+
+        assert_eq!(transforms.len(), 2);
+        assert_eq!(transforms[0].name, "random_flip");
+        assert_eq!(transforms[0].params["probability"].as_float().unwrap(), 0.5);
+        assert_eq!(
+            transforms[0].params["orientation"].as_str().unwrap(),
+            "horizontal"
+        );
+        assert_eq!(transforms[1].name, "color_jitter");
+        assert_eq!(transforms[1].params["brightness"].as_float().unwrap(), 0.2);
+    }
+
+    #[test]
+    fn test_parse_with_override() {
+        let (_dir, config_path) = create_test_config();
+        let (_local_dir, local_config_path) = create_test_local_config();
+
+        let config = ParsedConfig::parse(&config_path, Some(&local_config_path));
+        let (_, dataset, model_table) = config.unpack();
+        let model: FastViTConfig = model_table.try_into().unwrap();
+
+        // Overridden values
+        assert_eq!(dataset.batch_size, 8);
+        assert_eq!(dataset.epochs, 10);
+        assert_eq!(model.dropout, 0.2);
+        assert_eq!(model.hidden_dim, 128);
+
+        // Unchanged values
+        assert_eq!(dataset.num_classes, 10);
+        assert_eq!(model.patch_size, 7);
+    }
+
+    #[test]
+    fn test_override_adds_new_fields() {
+        let (_dir, config_path) = create_test_config();
+        let local_dir = TempDir::new().unwrap();
+        let local_config_path = local_dir.path().join("experiments.local.toml");
+
+        let local_config_content = r#"
+[mnist]
+batch_size = 16
+
+[model]
+num_heads = 4
+"#;
+        std::fs::write(&local_config_path, local_config_content).unwrap();
+
+        let config = ParsedConfig::parse(&config_path, Some(&local_config_path));
+        let (_, dataset, model_table) = config.unpack();
+        let model: FastViTConfig = model_table.try_into().unwrap();
+
+        // Overridden
+        assert_eq!(dataset.batch_size, 16);
+        assert_eq!(model.num_heads, 4);
+
+        // Unchanged
+        assert_eq!(dataset.num_classes, 10);
+        assert_eq!(model.embed_dim, 512);
     }
 }

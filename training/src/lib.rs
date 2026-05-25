@@ -1,8 +1,10 @@
 pub mod augmentations;
 pub mod benchmarks;
 pub mod config;
+pub mod conv;
 pub mod curves;
 pub mod data;
+pub mod embeddings;
 pub mod encoders;
 pub mod kernels;
 pub mod linear;
@@ -11,6 +13,5 @@ pub mod mixing;
 pub mod models;
 pub mod norm;
 pub mod spectre;
-pub mod tokenization;
 pub mod training;
 pub mod utils;

@@ -1,4 +1,4 @@
-use crate::data::{mapper::FrameMapper, strategy::FrameBatchStrategy};
+use crate::data::{dataloader::strategy::FrameBatchStrategy, mapper::FrameMapper};
 use polars::prelude::*;
 use std::sync::Mutex;
 

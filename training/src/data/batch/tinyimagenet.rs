@@ -8,7 +8,7 @@ use polars::prelude::*;
 
 use crate::{
     augmentations::Pipeline,
-    data::batch::{FrameBatcher, ImageBatch},
+    data::batch::{Batch, Batcher},
 };
 
 const IMAGECOL: &str = "image";
@@ -22,16 +22,10 @@ impl TinyImageNetBatcher {
     }
 }
 
-impl<B: Backend> FrameBatcher<B> for TinyImageNetBatcher {
-    fn batch(
-        &self,
-        df: DataFrame,
-        transforms: Arc<Pipeline<B>>,
-        device: &B::Device,
-    ) -> ImageBatch<B> {
+impl<B: Backend> Batcher<B> for TinyImageNetBatcher {
+    fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B> {
         let batch_size = df.height();
 
-        // Image handling
         let total_images = batch_size * 64 * 64 * 3;
 
         let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
@@ -60,8 +54,8 @@ impl<B: Backend> FrameBatcher<B> for TinyImageNetBatcher {
                 .div_scalar(255),
         );
 
-        ImageBatch {
-            images,
+        Batch {
+            data: images.flatten::<1>(0, -1),
             targets: labels,
         }
     }
