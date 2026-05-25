@@ -61,7 +61,7 @@ impl<B: Backend> CloudPatcher<B> {
 
         feat.max_dim(1) // [B*M, 1, embed_dim]
             .squeeze_dim::<2>(1) // [B*M, embed_dim]
-            .reshape([b, m, self.mlp2.weight.dims()[0]])
+            .reshape([b, m, self.mlp2.weight.dims()[1]])
     }
 }
 

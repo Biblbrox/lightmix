@@ -10,8 +10,12 @@ use burn_cuda::Cuda;
 use lightmix::{
     augmentations::{Pipeline, builder::AugmentationBuilder},
     config::{OptimizerConfig, ParsedConfig},
-    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset},
-    models::{efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, vit::ViTConfig},
+    data::batch::{cifar100::Cifar100Batcher, modelnet40::ModelNet40Batcher},
+    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset, modelnet40::ModelNet40Dataset},
+    models::{
+        efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, fast_vit3d::FastViT3DConfig,
+        vit::ViTConfig,
+    },
     training::train,
 };
 use simplelog::{LevelFilter, WriteLogger};
@@ -59,11 +63,42 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
             dataset_cfg.std.clone(),
             &device,
         );
-    let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
 
     match model_name.as_str() {
+        name if name.starts_with("fast_vit_cloud") => {
+            let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
+            let batcher = ModelNet40Batcher::new();
+            let dataset = ModelNet40Dataset::new(dataset_path, LazyFiletype::Arrow);
+            let artifact_dir = format!(
+                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}-centers{}-kn{}",
+                model_name,
+                dataset_name,
+                model_cfg.num_heads,
+                model_cfg.hidden_dim,
+                model_cfg.embed_dim,
+                model_cfg.num_encoders,
+                model_cfg.sinkhorn_temp,
+                model_cfg.num_centers,
+                model_cfg.k_neighbours,
+            );
+            train(
+                &artifact_dir,
+                shared,
+                dataset_cfg,
+                device,
+                model_cfg,
+                dataset,
+                pipeline_train,
+                pipeline_val,
+                optimizer,
+                batcher.clone(),
+                batcher,
+            );
+        }
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
+            let batcher = Cifar100Batcher::new();
+            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
             let artifact_dir = format!(
                 "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}",
                 model_name,
@@ -84,10 +119,14 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
+                batcher.clone(),
+                batcher,
             );
         }
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
+            let batcher = Cifar100Batcher::new();
+            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
             let artifact_dir = format!(
                 "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}",
                 model_name,
@@ -107,10 +146,14 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
+                batcher.clone(),
+                batcher,
             );
         }
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
+            let batcher = Cifar100Batcher::new();
+            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
             let artifact_dir = format!(
                 "./experiments/{}-{}-stem{}-ch{:?}-dep{:?}",
                 model_name,
@@ -129,6 +172,8 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
+                batcher.clone(),
+                batcher,
             );
         }
         _ => panic!("Unknown model: {}", model_name),

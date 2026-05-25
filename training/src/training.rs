@@ -27,10 +27,8 @@ use burn::{
 use serde::Serialize;
 
 use crate::{
-    augmentations::Pipeline,
-    data::{batch::cifar100::Cifar100Batcher, dataset::LazyDataset},
-    metrics::MetricsHandler,
-    models::ModelConfig,
+    augmentations::Pipeline, data::batch::Batcher, data::dataset::LazyDataset,
+    metrics::MetricsHandler, models::ModelConfig,
 };
 use crate::{config::DatasetConfig, data::dataloader::strategy::buffered::BufferedBatchStrategy};
 use crate::{config::SharedConfig, data::builder::StreamingDataLoaderBuilder};
@@ -46,8 +44,6 @@ pub trait Saveable: Serialize {
 impl Saveable for SharedConfig {}
 impl Saveable for DatasetConfig {}
 
-type Batcher = Cifar100Batcher;
-
 pub fn train<B: Backend>(
     artifact_dir: &str,
     shared: SharedConfig,
@@ -58,6 +54,8 @@ pub fn train<B: Backend>(
     pipeline_train: Pipeline<Autodiff<B>>,
     pipeline_val: Pipeline<B>,
     optimizer: AdamWConfig,
+    batcher_train: Arc<dyn Batcher<Autodiff<B>>>,
+    batcher_val: Arc<dyn Batcher<B>>,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
     if !shared.continue_training {
@@ -70,19 +68,18 @@ pub fn train<B: Backend>(
 
     B::seed(&device, shared.random_seed as u64);
 
-    let batcher = Batcher::new();
     let strategy = BufferedBatchStrategy::new(
         dataset_cfg.batch_size,
         dataset_cfg.batch_size,
         shared.num_workers as usize,
     );
 
-    let dataloader_train = StreamingDataLoaderBuilder::<Autodiff<B>>::new(batcher.clone())
+    let dataloader_train = StreamingDataLoaderBuilder::<Autodiff<B>>::new(batcher_train)
         .with_strategy(strategy.clone().with_shuffle(shared.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
         .build(dataset.train());
-    let dataloader_val = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
+    let dataloader_val = StreamingDataLoaderBuilder::<B>::new(batcher_val)
         .with_strategy(strategy)
         .with_transforms(Arc::new(pipeline_val))
         .with_device(device.clone())
