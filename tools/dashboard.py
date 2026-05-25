@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 
 
 def parse_logs(root_dir):
+    """Parse all log files into a DataFrame."""
     epoch_regex = re.compile(r"epoch-(\d+)")
     rows = []
 
@@ -19,32 +20,19 @@ def parse_logs(root_dir):
         exp = file_path.split("/")[-4]
         split = "train" if "train" in file_path else "valid"
 
-        folder = basename(dirname(file_path))
-        match = epoch_regex.search(folder)
+        match = epoch_regex.search(basename(dirname(file_path)))
         if not match:
             continue
 
-        epoch = int(match.group(1))
-        metric = basename(file_path).replace(".log", "")
-
-        frame = pl.read_csv(
-            file_path,
-            has_header=False,
-            use_pyarrow=True,
-            # schema_overrides=[pl.Float64, pl.Int32],
-        ).get_column("column_1")
-        val = frame.mean()
-        std = frame.std()
-        rows.append(
-            {
-                "experiment": exp,
-                "split": split,
-                "metric": metric,
-                "epoch": epoch,
-                "value": val,
-                "err": std,
-            }
-        )
+        df = pl.read_csv(file_path, has_header=False, use_pyarrow=True)
+        rows.append({
+            "experiment": exp,
+            "split": split,
+            "metric": basename(file_path).replace(".log", ""),
+            "epoch": int(match.group(1)),
+            "value": df["column_1"].mean(),
+            "err": df["column_1"].std(),
+        })
 
     return pl.DataFrame(rows).sort(["experiment", "metric", "epoch"])
 
@@ -87,59 +75,51 @@ if __name__ == "__main__":
             dcc.Store(id="df-store"),
             dcc.Store(id="theme-store"),
             dbc.Row(
-                dbc.Col(
-                    [
-                        html.H2("Experiment Dashboard", className="d-inline me-3"),
-                        dbc.Switch(
-                            id="theme-switch",
-                            label="Dark",
-                            value=True,
-                            className="d-inline-flex",
-                        ),
-                    ]
-                ),
+                dbc.Col([
+                    html.H2("Experiment Dashboard", className="d-inline me-3"),
+                    dbc.Switch(
+                        id="theme-switch",
+                        label="Dark",
+                        value=True,
+                        className="d-inline-flex",
+                    ),
+                ]),
                 class_name="align-items-center py-2 border-bottom mb-3",
             ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.H4("Experiments", className="mb-3"),
-                            dbc.Checklist(
-                                id="experiment-selector",
-                                options=[
-                                    {
-                                        "label": html.Span(
-                                            [
-                                                html.Span(
-                                                    style={
-                                                        "width": "10px",
-                                                        "height": "10px",
-                                                        "borderRadius": "50%",
-                                                        "display": "inline-block",
-                                                        "marginRight": "8px",
-                                                        "backgroundColor": PALETTE[
-                                                            i % len(PALETTE)
-                                                        ],
-                                                    }
-                                                ),
-                                                name,
-                                            ]
+            dbc.Row([
+                dbc.Col(
+                    [
+                        html.H4("Experiments", className="mb-3"),
+                        dbc.Checklist(
+                            id="experiment-selector",
+                            options=[
+                                {
+                                    "label": html.Span([
+                                        html.Span(
+                                            style={
+                                                "width": "10px",
+                                                "height": "10px",
+                                                "borderRadius": "50%",
+                                                "display": "inline-block",
+                                                "marginRight": "8px",
+                                                "backgroundColor": PALETTE[i % len(PALETTE)],
+                                            }
                                         ),
-                                        "value": name,
-                                    }
-                                    for i, name in enumerate(df["experiment"].unique())
-                                ],
-                                value=[df["experiment"][0]],
-                                input_class_name="btn-check",
-                                label_class_name="btn btn-outline-secondary w-100 text-start mb-1",
-                            ),
-                        ],
-                        width=2,
-                    ),
-                    dbc.Col(html.Div(id="plots-container"), width=10),
-                ]
-            ),
+                                        name,
+                                    ]),
+                                    "value": name,
+                                }
+                                for i, name in enumerate(df["experiment"].unique())
+                            ],
+                            value=[df["experiment"][0]],
+                            input_class_name="btn-check",
+                            label_class_name="btn btn-outline-secondary w-100 text-start mb-1",
+                        ),
+                    ],
+                    width=2,
+                ),
+                dbc.Col(html.Div(id="plots-container"), width=10),
+            ]),
         ],
         fluid=True,
     )
@@ -154,21 +134,19 @@ if __name__ == "__main__":
         exps = fresh["experiment"].unique().to_list()
         return fresh.write_json(), [
             {
-                "label": html.Span(
-                    [
-                        html.Span(
-                            style={
-                                "width": "10px",
-                                "height": "10px",
-                                "borderRadius": "50%",
-                                "display": "inline-block",
-                                "marginRight": "8px",
-                                "backgroundColor": PALETTE[i % len(PALETTE)],
-                            }
-                        ),
-                        name,
-                    ]
-                ),
+                "label": html.Span([
+                    html.Span(
+                        style={
+                            "width": "10px",
+                            "height": "10px",
+                            "borderRadius": "50%",
+                            "display": "inline-block",
+                            "marginRight": "8px",
+                            "backgroundColor": PALETTE[i % len(PALETTE)],
+                        }
+                    ),
+                    name,
+                ]),
                 "value": name,
             }
             for i, name in enumerate(exps)
@@ -203,9 +181,7 @@ if __name__ == "__main__":
                         go.Scatter(
                             x=exp_df["epoch"].to_list(),
                             y=exp_df["value"].to_list(),
-                            error_y=dict(
-                                type="data", array=exp_df["err"].to_list(), visible=True
-                            ),
+                            error_y=dict(type="data", array=exp_df["err"].to_list(), visible=True),
                             name=exp,
                             line=dict(color=exp_color[exp]),
                             legendgroup=exp,

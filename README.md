@@ -39,3 +39,11 @@ For now, we have the following models:
 Implementations in progress:
 - Swin ViT;
 - Token-To-Token ViT.
+
+
+## Benchmarking
+In order to run benchmarks, use ```cargo bench```. Also, you should specify run id for your 
+benchmark run. For example, for mixing benchmarks:
+```bash
+LIGHTMIX_RUN_ID=1 cargo bench -p lightmix --bench mixin
+```

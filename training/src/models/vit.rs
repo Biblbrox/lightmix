@@ -1,7 +1,6 @@
 use burn::{
     Tensor,
     backend::Autodiff,
-    config::Config,
     module::Module,
     nn::{
         LayerNorm, LayerNormConfig, Linear, LinearConfig,
@@ -15,6 +14,7 @@ use burn::{
     },
     train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
+use serde::Deserialize;
 
 use crate::{
     data::batch::Batch,
@@ -34,7 +34,7 @@ pub struct ViT<B: Backend> {
     image_size: usize,
 }
 
-#[derive(Config, Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ViTConfig {
     pub embed_dim: usize,
     pub hidden_dim: usize,
@@ -137,10 +137,12 @@ impl<B: AutodiffBackend> TrainStep for ViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         let item = self.forward_classification(images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -152,10 +154,12 @@ impl<B: Backend> InferenceStep for ViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         self.forward_classification(images, batch.targets)
     }
 }

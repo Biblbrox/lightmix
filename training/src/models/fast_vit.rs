@@ -62,7 +62,7 @@ impl FastViTConfig {
         let grid_size = image_size / self.patch_size;
         let num_patches = grid_size.pow(2);
 
-          FastViT {
+        FastViT {
             embedding_block: PatchEmbeddingConfig::new(
                 in_channels,
                 self.embed_dim,
@@ -138,10 +138,12 @@ impl<B: AutodiffBackend> TrainStep for FastViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         let item = self.forward_classification(images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -153,10 +155,12 @@ impl<B: Backend> InferenceStep for FastViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         self.forward_classification(images, batch.targets)
     }
 }

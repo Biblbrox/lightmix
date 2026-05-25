@@ -6,6 +6,7 @@ use burn::{
     tensor::backend::AutodiffBackend,
     train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
+use serde::Deserialize;
 
 use crate::{
     conv::{ConvBNAct, ConvBNActConfig, MBConv, MBConvConfig},
@@ -183,7 +184,8 @@ impl<B: Backend> EfficientViT<B> {
     }
 }
 
-#[derive(Config, Debug)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct EfficientViTConfig {
     pub stem_channels: usize,
 
@@ -191,34 +193,40 @@ pub struct EfficientViTConfig {
     pub stage_depths: [usize; 3],
     pub stage_heads: [usize; 3],
 
-    #[config(default = 2)]
     pub ffn_expansion_ratio: usize,
-
-    #[config(default = 4)]
     pub mbconv_expansion_ratio: usize,
-
-    #[config(default = 3)]
     pub attention_kernel_size: usize,
-
-    #[config(default = 0.0)]
     pub dropout: f64,
-
-    #[config(default = 0.025)]
     pub adam_weight_decay: f64,
-
     pub adam_betas: [f64; 2],
 }
 
+impl Default for EfficientViTConfig {
+    fn default() -> Self {
+        Self {
+            stem_channels: 32,
+            stage_channels: [64, 128, 256],
+            stage_depths: [2, 2, 6],
+            stage_heads: [2, 4, 8],
+            ffn_expansion_ratio: 2,
+            mbconv_expansion_ratio: 4,
+            attention_kernel_size: 3,
+            dropout: 0.0,
+            adam_weight_decay: 0.025,
+            adam_betas: [0.9, 0.999],
+        }
+    }
+}
+
 impl EfficientViTConfig {
-    /// Generic initialization from config fields.
     pub fn init<B: Backend>(
         &self,
         device: &B::Device,
         in_channels: usize,
-        _image_size: usize,
+        image_size: usize,
         num_classes: usize,
     ) -> EfficientViT<B> {
-        let c1 = self.stage_channels[0];
+        let c1 = self.stem_channels;
         let c2 = self.stage_channels[1];
         let c3 = self.stage_channels[2];
 
@@ -254,7 +262,7 @@ impl EfficientViTConfig {
             head: LinearConfig::new(c3, num_classes).init(device),
 
             in_channels,
-            image_size: _image_size,
+            image_size,
         }
     }
 }
@@ -322,10 +330,12 @@ impl<B: AutodiffBackend> TrainStep for EfficientViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         let item = self.forward_classification(images, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -337,10 +347,12 @@ impl<B: Backend> InferenceStep for EfficientViT<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
-        let images = batch
-            .data
-            .clone()
-            .reshape([batch.batch_size(), self.in_channels, self.image_size, self.image_size]);
+        let images = batch.data.clone().reshape([
+            batch.batch_size(),
+            self.in_channels,
+            self.image_size,
+            self.image_size,
+        ]);
         self.forward_classification(images, batch.targets)
     }
 }
