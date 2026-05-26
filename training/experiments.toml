@@ -77,6 +77,16 @@ in_channels = 1
 mean = [0.1307]
 std = [0.3081]
 
+[modelnet40]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 0
+num_classes = 40
+in_channels = 3
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]
+
 
 [vit_micro]
 patch_size = 16
@@ -231,6 +241,62 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
 sinkhorn_temp = 0.05
+
+[fast_vit_cloud_nano]
+embed_dim = 32
+num_heads = 3
+num_encoders = 3
+hidden_dim = 64
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 64
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_tiny]
+embed_dim = 192
+num_heads = 3
+num_encoders = 6
+hidden_dim = 768
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 128
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_small]
+embed_dim = 384
+num_heads = 6
+num_encoders = 12
+hidden_dim = 1536
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 256
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_base]
+embed_dim = 768
+num_heads = 12
+num_encoders = 12
+hidden_dim = 3072
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 256
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
 
 [efficientvit_m0]
 image_size = 224

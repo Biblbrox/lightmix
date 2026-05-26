@@ -81,7 +81,7 @@ impl LazyDataset for ModelNet40Dataset {
     fn validation(&self) -> LazyFrame {
         let path = match self.val_subpath {
             Some(ref subpath) => self.uri.join(subpath),
-            None => self.uri.join("**/val*.*"),
+            None => self.uri.join("**/test*.*"),
         };
         match self.ft {
             LazyFiletype::Parquet => {
