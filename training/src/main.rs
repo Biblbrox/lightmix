@@ -10,8 +10,7 @@ use burn_cuda::Cuda;
 use lightmix::{
     augmentations::{Pipeline, builder::AugmentationBuilder},
     config::{OptimizerConfig, ParsedConfig},
-    data::batch::{cifar100::Cifar100Batcher, modelnet40::ModelNet40Batcher},
-    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset, modelnet40::ModelNet40Dataset},
+    data::dataset::{DatasetType, LazyFiletype},
     models::{
         efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, fast_vit3d::FastViT3DConfig,
         vit::ViTConfig,
@@ -33,7 +32,13 @@ fn init_logger() {
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
+fn match_dataset<B: Backend>(dataset_name: &str) -> DatasetType {
+    dataset_name
+        .parse::<DatasetType>()
+        .expect("Unknown dataset")
+}
+
+fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
     let optimizer_cfg: OptimizerConfig = config.optimizer();
     let ParsedConfig {
         shared,
@@ -56,6 +61,11 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         .with_beta_1(optimizer_cfg.adam_betas[0] as f32)
         .with_beta_2(optimizer_cfg.adam_betas[1] as f32);
 
+    let ds_type = match_dataset::<B>(&dataset_name);
+    let dataset = ds_type.make_dataset();
+    let batcher_train = ds_type.make_batcher::<Autodiff<B>>();
+    let batcher_val = ds_type.make_batcher::<B>();
+
     let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
         AugmentationBuilder::new().build(
             &shared.augmentations,
@@ -67,22 +77,11 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
     match model_name.as_str() {
         name if name.starts_with("fast_vit_cloud") => {
             let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
-            let batcher = ModelNet40Batcher::new();
-            let dataset = ModelNet40Dataset::new(dataset_path, LazyFiletype::Arrow);
-            let artifact_dir = format!(
-                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}-centers{}-kn{}",
-                model_name,
-                dataset_name,
-                model_cfg.num_heads,
-                model_cfg.hidden_dim,
-                model_cfg.embed_dim,
-                model_cfg.num_encoders,
-                model_cfg.sinkhorn_temp,
-                model_cfg.num_centers,
-                model_cfg.k_neighbours,
-            );
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
@@ -91,26 +90,17 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
-                batcher.clone(),
-                batcher,
+                batcher_train.clone(),
+                batcher_val.clone(),
             );
         }
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
-            let batcher = Cifar100Batcher::new();
-            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
-            let artifact_dir = format!(
-                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}",
-                model_name,
-                dataset_name,
-                model_cfg.num_heads,
-                model_cfg.hidden_dim,
-                model_cfg.embed_dim,
-                model_cfg.num_encoders,
-                model_cfg.sinkhorn_temp,
-            );
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
@@ -119,25 +109,17 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
-                batcher.clone(),
-                batcher,
+                batcher_train.clone(),
+                batcher_val.clone(),
             );
         }
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
-            let batcher = Cifar100Batcher::new();
-            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
-            let artifact_dir = format!(
-                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}",
-                model_name,
-                dataset_name,
-                model_cfg.num_heads,
-                model_cfg.hidden_dim,
-                model_cfg.embed_dim,
-                model_cfg.num_encoders,
-            );
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
@@ -146,24 +128,17 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
-                batcher.clone(),
-                batcher,
+                batcher_train.clone(),
+                batcher_val.clone(),
             );
         }
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
-            let batcher = Cifar100Batcher::new();
-            let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
-            let artifact_dir = format!(
-                "./experiments/{}-{}-stem{}-ch{:?}-dep{:?}",
-                model_name,
-                dataset_name,
-                model_cfg.stem_channels,
-                model_cfg.stage_channels,
-                model_cfg.stage_depths,
-            );
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
@@ -172,8 +147,8 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 pipeline_train,
                 pipeline_val,
                 optimizer,
-                batcher.clone(),
-                batcher,
+                batcher_train.clone(),
+                batcher_val.clone(),
             );
         }
         _ => panic!("Unknown model: {}", model_name),

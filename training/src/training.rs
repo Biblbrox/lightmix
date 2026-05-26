@@ -24,11 +24,17 @@ use burn::{
         renderer::tui::TuiMetricsRendererWrapper,
     },
 };
+use polars::prelude::PlRefPath;
 use serde::Serialize;
 
 use crate::{
-    augmentations::Pipeline, data::batch::Batcher, data::dataset::LazyDataset,
-    metrics::MetricsHandler, models::ModelConfig,
+    augmentations::Pipeline,
+    data::{
+        batch::Batcher,
+        dataset::{LazyDataset, LazyFiletype},
+    },
+    metrics::MetricsHandler,
+    models::ModelConfig,
 };
 use crate::{config::DatasetConfig, data::dataloader::strategy::buffered::BufferedBatchStrategy};
 use crate::{config::SharedConfig, data::builder::StreamingDataLoaderBuilder};
@@ -46,6 +52,8 @@ impl Saveable for DatasetConfig {}
 
 pub fn train<B: Backend>(
     artifact_dir: &str,
+    dataset_type: LazyFiletype,
+    dataset_path: PlRefPath,
     shared: SharedConfig,
     dataset_cfg: DatasetConfig,
     device: B::Device,
@@ -78,12 +86,12 @@ pub fn train<B: Backend>(
         .with_strategy(strategy.clone().with_shuffle(shared.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
-        .build(dataset.train());
+        .build(dataset.train(dataset_path.clone(), dataset_type.clone()));
     let dataloader_val = StreamingDataLoaderBuilder::<B>::new(batcher_val)
         .with_strategy(strategy)
         .with_transforms(Arc::new(pipeline_val))
         .with_device(device.clone())
-        .build(dataset.validation());
+        .build(dataset.validation(dataset_path, dataset_type));
 
     let recorder = DefaultRecorder::new();
 

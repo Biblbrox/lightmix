@@ -87,6 +87,19 @@ impl FastViT3DConfig {
             num_centers: self.num_centers,
         }
     }
+
+    pub fn model_name(&self) -> String {
+        format!(
+            "fast_vit_cloud-head{}-hid{}-emb{}-enc{}-temp{}-centers{}-kn{}",
+            self.num_heads,
+            self.hidden_dim,
+            self.embed_dim,
+            self.num_encoders,
+            self.sinkhorn_temp,
+            self.num_centers,
+            self.k_neighbours
+        )
+    }
 }
 
 impl<B: Backend> ModelConfig<B> for FastViT3DConfig {
