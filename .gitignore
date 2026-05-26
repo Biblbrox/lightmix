@@ -8,6 +8,7 @@ wheels/
 uv.lock
 vit/__pycache__
 .vscode
+.zed
 *.svg
 !assets/logo.svg
 *.data

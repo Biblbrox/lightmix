@@ -125,6 +125,9 @@ pub fn train<B: Backend>(
         logger.log_metric_definition(definition.clone());
     }
 
+    #[cfg(feature = "viz-rerun")]
+    let mut rerun_rec: Option<rerun::RecordingStream> = None;
+
     let interrupter = Interrupter::new();
     let mut renderer = TuiMetricsRendererWrapper::new(interrupter.clone(), None);
     valid_metrics.register(&mut renderer);
@@ -135,6 +138,15 @@ pub fn train<B: Backend>(
             items_processed: epoch as usize,
             items_total: dataset_cfg.epochs as usize,
         };
+
+        #[cfg(feature = "viz-rerun")]
+        if rerun_rec.is_none() {
+            rerun_rec = Some(
+                rerun::RecordingStreamBuilder::new("lightmix")
+                    .save(format!("{artifact_dir}/validation.rrd"))
+                    .expect("Failed to create rerun recording stream"),
+            );
+        }
 
         let mut lr = 0.0;
         for (iteration, batch) in dataloader_train.iter().enumerate() {
@@ -193,8 +205,17 @@ pub fn train<B: Backend>(
                 items_total: num_val_iterations,
             };
 
+            #[cfg(feature = "viz-rerun")]
+            let batch_clone = batch.clone();
+
             let step_output = model_valid.step(batch);
-            let output = step_output;
+
+            #[cfg(feature = "viz-rerun")]
+            if let Some(ref rec) = rerun_rec {
+                use crate::logging::log_3d_sample;
+
+                log_3d_sample(&step_output, &batch_clone, epoch, iteration as i64, rec);
+            }
 
             let metrics_metadata = MetricMetadata {
                 progress: progress.clone(),
@@ -204,7 +225,7 @@ pub fn train<B: Backend>(
             };
 
             valid_metrics.update_valid(
-                &output,
+                &step_output,
                 &metrics_metadata,
                 &mut renderer,
                 &mut logger,
@@ -251,6 +272,11 @@ pub fn train<B: Backend>(
             interrupter.stop(Some("Training finished"));
             break;
         }
+    }
+
+    #[cfg(feature = "viz-rerun")]
+    if let Some(rec) = rerun_rec.take() {
+        drop(rec);
     }
 
     // If we don't do that, renderer won't allow stdout to pass
