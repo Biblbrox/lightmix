@@ -62,9 +62,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
     match model_name.as_str() {
         name if name.starts_with("fast_vit_cloud") => {
             let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
                 LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
@@ -77,9 +75,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
                 LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
@@ -92,9 +88,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
                 LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
@@ -107,9 +101,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
                 LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,

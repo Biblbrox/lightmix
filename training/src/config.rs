@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
-use crate::augmentations::builder::AugmentationConfig;
+use crate::augmentations::builder::{AugmentationConfig, PipelineDefault, PipelineDefaults};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedConfig {
@@ -16,8 +16,10 @@ pub struct SharedConfig {
     pub resume_epoch: i64,
     pub active_dataset: String,
     pub active_model: String,
+    /// Legacy single-file augmentations (backward compat with tests only).
     #[serde(default)]
-    pub augmentations: AugmentationConfig,
+    #[allow(dead_code)]
+    pub augmentations: Option<AugmentationConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,8 +30,42 @@ pub struct DatasetConfig {
     pub batch_size: usize,
     pub val_batch_size: usize,
     pub epochs: usize,
-    pub mean: Vec<f32>,
-    pub std: Vec<f32>,
+    /// Resolved augmentation pipeline for this dataset.
+    #[serde(default)]
+    pub augmentations: AugmentationConfig,
+}
+
+/// Temporary struct used only during config parsing (not serialized).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RawDatasetConfig {
+    pub num_classes: usize,
+    pub img_size: usize,
+    pub in_channels: usize,
+    pub batch_size: usize,
+    pub val_batch_size: usize,
+    pub epochs: usize,
+    #[serde(default)]
+    pub augmentation_pipeline: String,
+    #[serde(default)]
+    pub transforms: Vec<String>,
+    /// Per-transform overrides as a table: [dataset.augmentations.transform_name]
+    #[serde(default)]
+    pub augmentations: std::collections::HashMap<String, toml::Value>,
+}
+
+impl From<RawDatasetConfig> for DatasetConfig {
+    fn from(raw: RawDatasetConfig) -> Self {
+        // Placeholder — resolved fields are set by resolve_dataset_augmentations()
+        DatasetConfig {
+            num_classes: raw.num_classes,
+            img_size: raw.img_size,
+            in_channels: raw.in_channels,
+            batch_size: raw.batch_size,
+            val_batch_size: raw.val_batch_size,
+            epochs: raw.epochs,
+            augmentations: AugmentationConfig::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +98,7 @@ fn override_conf(mainconf: &mut Table, localconf: &Table) {
     }
 }
 
+#[allow(dead_code)]
 fn empty_aug_config() -> AugmentationConfig {
     AugmentationConfig {
         transforms_train: vec![],
@@ -88,9 +125,8 @@ impl ParsedConfig {
         let mut dataset_section = datasets_table[&dataset_name].as_table().cloned().unwrap();
         let mut model_section = models_table[&model_name].as_table().cloned().unwrap();
 
-        // Load augmentations (not in experiments.toml, so attach after parsing shared)
-        let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
-        shared.augmentations = aug_config;
+        // Parse pipeline defaults once (used for all dataset augmentation resolution)
+        let pipelines = Self::parse_pipeline_defaults(config_dir.join("augmentations.toml"));
 
         if let Some(local_path) = local.filter(|p| p.exists()) {
             let local_table = Self::read_toml(local_path);
@@ -101,14 +137,25 @@ impl ParsedConfig {
                 &models_table,
                 local_table,
                 config_dir,
+                &pipelines,
             );
         }
 
-        let dataset: DatasetConfig = dataset_section.try_into().unwrap();
+        // Resolve augmentations from pipeline defaults + dataset overrides
+        let raw_dataset: RawDatasetConfig = dataset_section.try_into().unwrap();
+        let resolved = Self::resolve_dataset_augmentations(&raw_dataset, &pipelines);
 
         ParsedConfig {
             shared,
-            dataset,
+            dataset: DatasetConfig {
+                num_classes: raw_dataset.num_classes,
+                img_size: raw_dataset.img_size,
+                in_channels: raw_dataset.in_channels,
+                batch_size: raw_dataset.batch_size,
+                val_batch_size: raw_dataset.val_batch_size,
+                epochs: raw_dataset.epochs,
+                augmentations: resolved,
+            },
             model_table: model_section,
         }
     }
@@ -120,7 +167,8 @@ impl ParsedConfig {
         datasets_table: &Table,
         models_table: &Table,
         local_table: Table,
-        config_dir: &Path,
+        _config_dir: &Path,
+        _pipelines: &HashMap<String, PipelineDefaults>,
     ) -> (SharedConfig, Table, Table) {
         let mut dataset_name = shared.active_dataset.clone();
         let mut model_name = shared.active_model.clone();
@@ -158,9 +206,6 @@ impl ParsedConfig {
             let mut merged_shared = shared_table.clone();
             override_conf(&mut merged_shared, &local_shared);
             shared = merged_shared.try_into().unwrap();
-            // Re-attach augmentations (not in experiments.toml anymore)
-            let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
-            shared.augmentations = aug_config;
         }
 
         // Merge dataset section from local if present
@@ -176,58 +221,128 @@ impl ParsedConfig {
         (shared, dataset_section, model_section)
     }
 
-    /// Parse [[transforms]] array with `kind` discriminator (train/val).
-    fn parse_augmentations<P: AsRef<Path>>(path: P) -> AugmentationConfig {
-        let path = path.as_ref();
-        let file = match std::fs::read_to_string(path) {
-            Ok(content) => content,
-            Err(_) => return empty_aug_config(),
-        };
+    /// Resolve a dataset's AugmentationConfig from pipeline defaults + table-based overrides.
+    fn resolve_dataset_augmentations(
+        raw: &RawDatasetConfig,
+        pipelines: &HashMap<String, PipelineDefaults>,
+    ) -> AugmentationConfig {
+        if raw.augmentation_pipeline.is_empty() || raw.transforms.is_empty() {
+            // No pipeline or no transforms specified — return empty config
+            return AugmentationConfig::default();
+        }
 
-        let table: toml::Table = match file.parse() {
-            Ok(t) => t,
-            Err(_) => return empty_aug_config(),
-        };
+        // Look up the named pipeline (panic with clear error if not found)
+        let pipeline = pipelines
+            .get(&raw.augmentation_pipeline)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Dataset '{}' references unknown augmentation pipeline '{}'. Available: {:?}",
+                    raw.num_classes,
+                    raw.augmentation_pipeline,
+                    pipelines.keys().collect::<Vec<_>>()
+                )
+            });
+
+        // Build a lookup of default transforms by name for easy override matching
+        let defaults_by_name: HashMap<&str, &PipelineDefault> = pipeline
+            .transforms
+            .iter()
+            .map(|t| (t.name.as_str(), t))
+            .collect();
 
         let mut transforms_train: Vec<crate::augmentations::builder::TransformConfig> = vec![];
         let mut transforms_val: Vec<crate::augmentations::builder::TransformConfig> = vec![];
 
-        if let Some(transforms) = table.get("transforms").and_then(|v| v.as_array()) {
-            for item in transforms {
-                let table = match item.as_table() {
-                    Some(t) => t,
-                    None => continue,
-                };
+        // Process transforms in the specified order, deep-merging overrides with defaults
+        for transform_name in &raw.transforms {
+            let default_transform = defaults_by_name
+                .get(transform_name.as_str())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Dataset '{}' orders transform '{}' but it is not defined in pipeline '{}'",
+                        raw.num_classes, transform_name, raw.augmentation_pipeline
+                    )
+                });
 
-                let name = table
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let kind = table.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-
-                // Collect params (everything except name and kind)
-                let mut params: std::collections::HashMap<String, toml::Value> = HashMap::new();
-                for (k, v) in table {
-                    if *k != "name" && *k != "kind" {
-                        params.insert(k.clone(), v.clone());
-                    }
+            // Deep-merge override params into default params (override fills/overwrites defaults)
+            let params = match raw.augmentations.get(transform_name.as_str()) {
+                Some(override_table) => {
+                    Self::deep_merge_params(&default_transform.params, override_table)
                 }
+                None => default_transform.params.clone(),
+            };
 
-                let transform = crate::augmentations::builder::TransformConfig { name, params };
+            let transform = crate::augmentations::builder::TransformConfig {
+                name: transform_name.clone(),
+                params,
+            };
 
-                match kind {
-                    "train" => transforms_train.push(transform),
-                    "val" => transforms_val.push(transform),
-                    _ => {}
-                }
+            match default_transform.kind.as_str() {
+                "train" => transforms_train.push(transform),
+                "val" => transforms_val.push(transform),
+                _ => {}
             }
         }
+
+        // Check that all overrides reference existing transforms (catch typos)
+        raw.augmentations.keys().for_each(|override_name| {
+            if !defaults_by_name.contains_key(override_name.as_str()) {
+                panic!(
+                    "Override references unknown transform '{}' in dataset '{}'",
+                    override_name, raw.num_classes
+                );
+            }
+        });
 
         AugmentationConfig {
             transforms_train,
             transforms_val,
         }
+    }
+
+    /// Deep-merge override params into default params. Override values fill/overwrite defaults.
+    fn deep_merge_params(
+        defaults: &HashMap<String, toml::Value>,
+        overrides: &toml::Value,
+    ) -> HashMap<String, toml::Value> {
+        let mut merged = defaults.clone();
+        if let Some(override_table) = overrides.as_table() {
+            for (k, v) in override_table {
+                merged.insert(k.clone(), v.clone());
+            }
+        }
+        merged
+    }
+
+    /// Parse pipeline defaults from augmentations.toml into a name → PipelineDefaults map.
+    fn parse_pipeline_defaults<P: AsRef<Path>>(path: P) -> HashMap<String, PipelineDefaults> {
+        let path = path.as_ref();
+        let file = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(_) => return HashMap::new(),
+        };
+
+        let table: toml::Table = match file.parse() {
+            Ok(t) => t,
+            Err(_) => return HashMap::new(),
+        };
+
+        let mut pipelines = HashMap::new();
+
+        if let Some(defaults_table) = table.get("defaults").and_then(|v| v.as_table()) {
+            for (pipeline_name, pipeline_value) in defaults_table {
+                match pipeline_value.clone().try_into::<PipelineDefaults>() {
+                    Ok(pipeline_defaults) => {
+                        pipelines.insert(pipeline_name.clone(), pipeline_defaults);
+                    }
+                    Err(_) => {
+                        eprintln!("Failed to parse pipeline '{}', skipping", pipeline_name);
+                    }
+                }
+            }
+        }
+
+        pipelines
     }
 
     /// Legacy: parse from a single combined TOML file (backward compat with tests).
@@ -240,7 +355,14 @@ impl ParsedConfig {
         }
 
         let shared: SharedConfig = table.clone().try_into().unwrap();
-        let dataset = table[&shared.active_dataset].clone().try_into().unwrap();
+        let mut dataset: DatasetConfig = table[&shared.active_dataset].clone().try_into().unwrap();
+
+        // Extract augmentation config from legacy [augmentations] section (set by serde)
+        if let Some(aug) = &shared.augmentations {
+            dataset.augmentations.transforms_train = aug.transforms_train.clone();
+            dataset.augmentations.transforms_val = aug.transforms_val.clone();
+        }
+
         let model_table = table[&shared.active_model].as_table().unwrap().clone();
 
         ParsedConfig {
@@ -303,6 +425,11 @@ active_dataset = "mnist"
 active_model = "model"
 
 [augmentations]
+mean = [0.1307]
+std = [0.3081]
+
+[[augmentations.transforms_train]]
+name = "normalize"
 
 [[augmentations.transforms_train]]
 name = "random_flip"
@@ -319,8 +446,6 @@ saturation = 0.2
 num_classes = 10
 img_size = 28
 in_channels = 1
-mean = [0.1307]
-std = [0.3081]
 batch_size = 64
 val_batch_size = 128
 epochs = 100
@@ -370,7 +495,7 @@ hidden_dim = 128
         assert_eq!(shared.learning_rate, 0.001);
         assert_eq!(shared.cache_dir, "/tmp/cache");
         assert_eq!(shared.num_workers, 4);
-        assert_eq!(shared.continue_training, false);
+        assert!(!shared.continue_training);
         assert_eq!(shared.resume_epoch, 0);
         assert_eq!(shared.active_dataset, "mnist");
         assert_eq!(shared.active_model, "model");
@@ -385,8 +510,6 @@ hidden_dim = 128
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(dataset.img_size, 28);
         assert_eq!(dataset.in_channels, 1);
-        assert_eq!(dataset.mean, vec![0.1307]);
-        assert_eq!(dataset.std, vec![0.3081]);
         assert_eq!(dataset.batch_size, 64);
         assert_eq!(dataset.val_batch_size, 128);
         assert_eq!(dataset.epochs, 100);
@@ -423,17 +546,18 @@ hidden_dim = 128
         let (_dir, config_path) = create_test_config();
         let config = ParsedConfig::parse(&config_path, None);
         let shared: SharedConfig = config.shared;
-        let transforms = &shared.augmentations.transforms_train;
+        let transforms = &shared.augmentations.as_ref().unwrap().transforms_train;
 
-        assert_eq!(transforms.len(), 2);
-        assert_eq!(transforms[0].name, "random_flip");
-        assert_eq!(transforms[0].params["probability"].as_float().unwrap(), 0.5);
+        assert_eq!(transforms.len(), 3);
+        assert_eq!(transforms[0].name, "normalize");
+        assert_eq!(transforms[1].name, "random_flip");
+        assert_eq!(transforms[1].params["probability"].as_float().unwrap(), 0.5);
         assert_eq!(
-            transforms[0].params["orientation"].as_str().unwrap(),
+            transforms[1].params["orientation"].as_str().unwrap(),
             "horizontal"
         );
-        assert_eq!(transforms[1].name, "color_jitter");
-        assert_eq!(transforms[1].params["brightness"].as_float().unwrap(), 0.2);
+        assert_eq!(transforms[2].name, "color_jitter");
+        assert_eq!(transforms[2].params["brightness"].as_float().unwrap(), 0.2);
     }
 
     #[test]

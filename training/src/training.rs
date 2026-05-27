@@ -59,7 +59,6 @@ pub fn build_metrics<B: Backend>() -> MetricsHandler<B> {
 }
 
 pub fn train<B: Backend>(
-    artifact_dir: &str,
     dataset_type: LazyFiletype,
     dataset_path: PlRefPath,
     shared: SharedConfig,
@@ -69,23 +68,22 @@ pub fn train<B: Backend>(
     dataset: DatasetType,
     optimizer: AdamWConfig,
 ) {
+    let artifact_dir: &String = &format!(
+        "./experiments/{}-{}",
+        shared.active_model, shared.active_dataset
+    );
+
     // Remove existing artifacts before to get an accurate learner summary
     if !shared.continue_training {
         std::fs::remove_dir_all(artifact_dir).ok();
         std::fs::create_dir_all(artifact_dir).ok();
     }
-
     let batcher_train = dataset.make_batcher::<Autodiff<B>>();
     let batcher_val = dataset.make_batcher::<B>();
     let dataset = dataset.make_dataset();
 
     let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
-        AugmentationBuilder::new().build(
-            &shared.augmentations,
-            dataset_cfg.mean.clone(),
-            dataset_cfg.std.clone(),
-            &device,
-        );
+        AugmentationBuilder::new().build(&dataset_cfg.augmentations, &device);
 
     shared.save(PathBuf::from(format!("{artifact_dir}/shared_config.json")).as_path());
     dataset_cfg.save(PathBuf::from(format!("{artifact_dir}/dataset_config.json")).as_path());
