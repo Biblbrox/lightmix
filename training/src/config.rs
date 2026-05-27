@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -61,6 +62,13 @@ fn override_conf(mainconf: &mut Table, localconf: &Table) {
     }
 }
 
+fn empty_aug_config() -> AugmentationConfig {
+    AugmentationConfig {
+        transforms_train: vec![],
+        transforms_val: vec![],
+    }
+}
+
 impl ParsedConfig {
     pub fn unpack(self) -> (SharedConfig, DatasetConfig, toml::Table) {
         (self.shared, self.dataset, self.model_table)
@@ -74,8 +82,8 @@ impl ParsedConfig {
 
         // Extract active_dataset and active_model before overrides so we can re-fetch sections
         let mut shared: SharedConfig = shared_table.clone().try_into().unwrap();
-        let mut dataset_name = shared.active_dataset.clone();
-        let mut model_name = shared.active_model.clone();
+        let dataset_name = shared.active_dataset.clone();
+        let model_name = shared.active_model.clone();
 
         let mut dataset_section = datasets_table[&dataset_name].as_table().cloned().unwrap();
         let mut model_section = models_table[&model_name].as_table().cloned().unwrap();
@@ -84,66 +92,16 @@ impl ParsedConfig {
         let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
         shared.augmentations = aug_config;
 
-        match local {
-            Some(local_path) if local_path.exists() => {
-                let local_table = Self::read_toml(local_path);
-
-                // Collect shared fields from local top-level keys
-                let mut local_shared_keys: Vec<(String, &Value)> = vec![];
-                for (key, value) in &local_table {
-                    match key.as_str() {
-                        "random_seed" | "learning_rate" | "cache_dir" | "num_workers"
-                        | "continue_training" | "resume_epoch" => {
-                            local_shared_keys.push((key.clone(), value));
-                        }
-                        "active_dataset" => {
-                            let new_ds = value.as_str().unwrap();
-                            dataset_name = new_ds.to_string();
-                            dataset_section = datasets_table[new_ds].as_table().cloned().unwrap();
-                        }
-                        "active_model" => {
-                            let new_md = value.as_str().unwrap();
-                            model_name = new_md.to_string();
-                            model_section = models_table[new_md].as_table().cloned().unwrap();
-                        }
-                        _ => {}
-                    }
-                }
-
-                // Re-parse shared after merging local overrides
-                if !local_shared_keys.is_empty() {
-                    let mut local_shared = Table::new();
-                    for (key, value) in local_shared_keys {
-                        local_shared.insert(key, (*value).clone());
-                    }
-                    let mut merged_shared = shared_table.clone();
-                    override_conf(&mut merged_shared, &local_shared);
-                    shared = merged_shared.try_into().unwrap();
-                    // Re-attach augmentations (not in experiments.toml anymore)
-                    let aug_config =
-                        Self::parse_augmentations(config_dir.join("augmentations.toml"));
-                    shared.augmentations = aug_config;
-                }
-
-                // Merge dataset section from local if present
-                if let Some(ds_local) = local_table.get(&dataset_name)
-                    && let Value::Table(local_ds) = ds_local
-                {
-                    let mut merged_ds = dataset_section.clone();
-                    override_conf(&mut merged_ds, local_ds);
-                    dataset_section = merged_ds;
-                }
-
-                // Merge model section from local if present
-                if let Some(md_local) = local_table.get(&model_name)
-                    && let Value::Table(local_md) = md_local
-                {
-                    let mut merged_md = model_section.clone();
-                    override_conf(&mut merged_md, local_md);
-                    model_section = merged_md;
-                }
-            }
-            _ => (),
+        if let Some(local_path) = local.filter(|p| p.exists()) {
+            let local_table = Self::read_toml(local_path);
+            (shared, dataset_section, model_section) = Self::apply_local_overrides(
+                shared,
+                &shared_table,
+                &datasets_table,
+                &models_table,
+                local_table,
+                config_dir,
+            );
         }
 
         let dataset: DatasetConfig = dataset_section.try_into().unwrap();
@@ -155,27 +113,80 @@ impl ParsedConfig {
         }
     }
 
+    /// Apply local config overrides: update shared fields, dataset, and model sections.
+    fn apply_local_overrides(
+        mut shared: SharedConfig,
+        shared_table: &Table,
+        datasets_table: &Table,
+        models_table: &Table,
+        local_table: Table,
+        config_dir: &Path,
+    ) -> (SharedConfig, Table, Table) {
+        let mut dataset_name = shared.active_dataset.clone();
+        let mut model_name = shared.active_model.clone();
+
+        // Collect shared fields and detect active_dataset/active_model changes
+        let mut local_shared_keys: Vec<(String, &Value)> = vec![];
+        for (key, value) in &local_table {
+            match key.as_str() {
+                "random_seed" | "learning_rate" | "cache_dir" | "num_workers"
+                | "continue_training" | "resume_epoch" => {
+                    local_shared_keys.push((key.clone(), value));
+                }
+                "active_dataset" => {
+                    let new_ds = value.as_str().unwrap();
+                    dataset_name = new_ds.to_string();
+                }
+                "active_model" => {
+                    let new_md = value.as_str().unwrap();
+                    model_name = new_md.to_string();
+                }
+                _ => {}
+            }
+        }
+
+        // Update dataset_section and model_section after potential name changes
+        let mut dataset_section = datasets_table[&dataset_name].as_table().cloned().unwrap();
+        let mut model_section = models_table[&model_name].as_table().cloned().unwrap();
+
+        // Re-parse shared after merging local overrides
+        if !local_shared_keys.is_empty() {
+            let mut local_shared = Table::new();
+            for (key, value) in local_shared_keys {
+                local_shared.insert(key, (*value).clone());
+            }
+            let mut merged_shared = shared_table.clone();
+            override_conf(&mut merged_shared, &local_shared);
+            shared = merged_shared.try_into().unwrap();
+            // Re-attach augmentations (not in experiments.toml anymore)
+            let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
+            shared.augmentations = aug_config;
+        }
+
+        // Merge dataset section from local if present
+        if let Some(ds_local) = local_table.get(&dataset_name).and_then(|v| v.as_table()) {
+            override_conf(&mut dataset_section, ds_local);
+        }
+
+        // Merge model section from local if present
+        if let Some(md_local) = local_table.get(&model_name).and_then(|v| v.as_table()) {
+            override_conf(&mut model_section, md_local);
+        }
+
+        (shared, dataset_section, model_section)
+    }
+
     /// Parse [[transforms]] array with `kind` discriminator (train/val).
     fn parse_augmentations<P: AsRef<Path>>(path: P) -> AugmentationConfig {
         let path = path.as_ref();
         let file = match std::fs::read_to_string(path) {
             Ok(content) => content,
-            Err(_) => {
-                return AugmentationConfig {
-                    transforms_train: vec![],
-                    transforms_val: vec![],
-                };
-            }
+            Err(_) => return empty_aug_config(),
         };
 
         let table: toml::Table = match file.parse() {
             Ok(t) => t,
-            Err(_) => {
-                return AugmentationConfig {
-                    transforms_train: vec![],
-                    transforms_val: vec![],
-                };
-            }
+            Err(_) => return empty_aug_config(),
         };
 
         let mut transforms_train: Vec<crate::augmentations::builder::TransformConfig> = vec![];
@@ -183,30 +194,32 @@ impl ParsedConfig {
 
         if let Some(transforms) = table.get("transforms").and_then(|v| v.as_array()) {
             for item in transforms {
-                if let Some(table) = item.as_table() {
-                    let name = table
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let kind = table.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let table = match item.as_table() {
+                    Some(t) => t,
+                    None => continue,
+                };
 
-                    // Collect params (everything except name and kind)
-                    let mut params: std::collections::HashMap<String, toml::Value> =
-                        std::collections::HashMap::new();
-                    for (k, v) in table {
-                        if *k != "name" && *k != "kind" {
-                            params.insert(k.clone(), v.clone());
-                        }
+                let name = table
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let kind = table.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Collect params (everything except name and kind)
+                let mut params: std::collections::HashMap<String, toml::Value> = HashMap::new();
+                for (k, v) in table {
+                    if *k != "name" && *k != "kind" {
+                        params.insert(k.clone(), v.clone());
                     }
+                }
 
-                    let transform = crate::augmentations::builder::TransformConfig { name, params };
+                let transform = crate::augmentations::builder::TransformConfig { name, params };
 
-                    match kind {
-                        "train" => transforms_train.push(transform),
-                        "val" => transforms_val.push(transform),
-                        _ => {}
-                    }
+                match kind {
+                    "train" => transforms_train.push(transform),
+                    "val" => transforms_val.push(transform),
+                    _ => {}
                 }
             }
         }
