@@ -9,7 +9,7 @@ pub mod tinyimagenet;
 
 use std::sync::Arc;
 
-use burn::tensor::Int;
+use burn::tensor::{DType, Int, TensorData};
 use burn::{prelude::Tensor, tensor::backend::Backend};
 use polars::prelude::*;
 use rand::{SeedableRng, seq::SliceRandom};
@@ -70,5 +70,54 @@ impl<B: Backend> Batch<B> {
 
 /// Unified batcher trait for all data types.
 pub trait Batcher<B: Backend>: Send + Sync {
+    fn image_batch(
+        &self,
+        df: DataFrame,
+        transforms: Arc<Pipeline<B>>,
+        img_width: usize,
+        img_height: usize,
+        image_col: &str,
+        label_col: &str,
+        channels: usize,
+        device: &B::Device,
+    ) -> Batch<B> {
+        let batch_size = df.height();
+
+        let total_images = batch_size * img_width * img_height * channels;
+        let mut imagebuf: Vec<u8> = Vec::with_capacity(total_images);
+        df.column(image_col)
+            .unwrap()
+            .binary()
+            .unwrap()
+            .into_no_null_iter()
+            .for_each(|chunk| imagebuf.extend_from_slice(chunk));
+
+        let imagedata = TensorData::from_bytes_vec(
+            imagebuf,
+            [batch_size, img_width, img_height, channels],
+            DType::U8,
+        )
+        .convert_dtype(DType::F32);
+        let labelbuf: Vec<i64> = df
+            .column(label_col)
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+
+        let labels = Tensor::<B, 1, Int>::from_ints(labelbuf.as_slice(), device);
+        let images = transforms.execute(
+            Tensor::<B, 4>::from_data(imagedata, device)
+                .swap_dims(1, -1)
+                .div_scalar(255),
+        );
+
+        Batch {
+            data: images.flatten::<1>(0, -1),
+            targets: labels,
+        }
+    }
+
     fn batch(&self, df: DataFrame, transforms: Arc<Pipeline<B>>, device: &B::Device) -> Batch<B>;
 }

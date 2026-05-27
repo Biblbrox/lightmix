@@ -152,7 +152,7 @@ impl<B: Backend> StochasticMixer<B> {
 impl StochasticMixerConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> StochasticMixer<B> {
         assert!(
-            self.embed_dim % self.num_heads == 0,
+            self.embed_dim.is_multiple_of(self.num_heads),
             "embed_dim {} must be divisible by num_heads {}",
             self.embed_dim,
             self.num_heads

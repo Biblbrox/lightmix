@@ -18,17 +18,19 @@ pub struct Pipeline<B: Backend> {
     ph: PhantomData<B>,
 }
 
+impl<B: Backend> Default for Pipeline<B> {
+    fn default() -> Pipeline<B> {
+        Pipeline {
+            transforms: vec![],
+            ph: PhantomData,
+        }
+    }
+}
+
 impl<B: Backend> Pipeline<B> {
     pub fn new(transforms: Vec<Box<dyn Augmentation<B>>>) -> Pipeline<B> {
         Pipeline {
             transforms,
-            ph: PhantomData,
-        }
-    }
-
-    pub fn default() -> Pipeline<B> {
-        Pipeline {
-            transforms: vec![],
             ph: PhantomData,
         }
     }

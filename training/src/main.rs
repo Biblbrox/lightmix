@@ -32,7 +32,7 @@ fn init_logger() {
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn match_dataset<B: Backend>(dataset_name: &str) -> DatasetType {
+fn match_dataset(dataset_name: &str) -> DatasetType {
     dataset_name
         .parse::<DatasetType>()
         .expect("Unknown dataset")
@@ -61,18 +61,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         .with_beta_1(optimizer_cfg.adam_betas[0] as f32)
         .with_beta_2(optimizer_cfg.adam_betas[1] as f32);
 
-    let ds_type = match_dataset::<B>(&dataset_name);
-    let dataset = ds_type.make_dataset();
-    let batcher_train = ds_type.make_batcher::<Autodiff<B>>();
-    let batcher_val = ds_type.make_batcher::<B>();
-
-    let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
-        AugmentationBuilder::new().build(
-            &shared.augmentations,
-            dataset_cfg.mean.clone(),
-            dataset_cfg.std.clone(),
-            &device,
-        );
+    let ds_type = match_dataset(&dataset_name);
 
     match model_name.as_str() {
         name if name.starts_with("fast_vit_cloud") => {
@@ -86,12 +75,8 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
                 optimizer,
-                batcher_train.clone(),
-                batcher_val.clone(),
             );
         }
         name if name.starts_with("fast_vit") => {
@@ -105,12 +90,8 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
                 optimizer,
-                batcher_train.clone(),
-                batcher_val.clone(),
             );
         }
         name if name.starts_with("vit") => {
@@ -124,12 +105,8 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
                 optimizer,
-                batcher_train.clone(),
-                batcher_val.clone(),
             );
         }
         name if name.starts_with("efficientvit") => {
@@ -143,12 +120,11 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
+                //dataset,
+                ds_type,
                 pipeline_train,
                 pipeline_val,
                 optimizer,
-                batcher_train.clone(),
-                batcher_val.clone(),
             );
         }
         _ => panic!("Unknown model: {}", model_name),

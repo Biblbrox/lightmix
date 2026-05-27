@@ -32,6 +32,12 @@ pub struct ThroughputMetric {
     count: usize,
 }
 
+impl Default for ThroughputMetric {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThroughputMetric {
     pub fn new() -> Self {
         Self {

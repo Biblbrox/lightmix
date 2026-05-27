@@ -10,7 +10,6 @@ use crate::data::batch::Batch;
 pub mod efficientvit;
 pub mod fast_vit;
 pub mod fast_vit3d;
-pub mod registry;
 pub mod token_to_token;
 pub mod vit;
 

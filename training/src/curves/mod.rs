@@ -67,7 +67,7 @@ impl SpaceCurve {
             SpaceCurve::Hilbert => {
                 build_permutation(grid_h, grid_w, |r, c| xy_to_hilbert(r, c, order))
             }
-            SpaceCurve::ZOrder => build_permutation(grid_h, grid_w, |r, c| xy_to_morton(r, c)),
+            SpaceCurve::ZOrder => build_permutation(grid_h, grid_w, xy_to_morton),
         }
     }
 }

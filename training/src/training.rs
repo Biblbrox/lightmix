@@ -28,11 +28,8 @@ use polars::prelude::PlRefPath;
 use serde::Serialize;
 
 use crate::{
-    augmentations::Pipeline,
-    data::{
-        batch::Batcher,
-        dataset::{LazyDataset, LazyFiletype},
-    },
+    augmentations::{Pipeline, builder::AugmentationBuilder},
+    data::dataset::{DatasetType, LazyDataset, LazyFiletype},
     metrics::MetricsHandler,
     models::ModelConfig,
 };
@@ -58,18 +55,26 @@ pub fn train<B: Backend>(
     dataset_cfg: DatasetConfig,
     device: B::Device,
     model: impl ModelConfig<B>,
-    dataset: impl LazyDataset,
-    pipeline_train: Pipeline<Autodiff<B>>,
-    pipeline_val: Pipeline<B>,
+    dataset: DatasetType,
     optimizer: AdamWConfig,
-    batcher_train: Arc<dyn Batcher<Autodiff<B>>>,
-    batcher_val: Arc<dyn Batcher<B>>,
 ) {
     // Remove existing artifacts before to get an accurate learner summary
     if !shared.continue_training {
         std::fs::remove_dir_all(artifact_dir).ok();
         std::fs::create_dir_all(artifact_dir).ok();
     }
+
+    let batcher_train = dataset.make_batcher::<Autodiff<B>>();
+    let batcher_val = dataset.make_batcher::<B>();
+    let dataset = dataset.make_dataset();
+
+    let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
+        AugmentationBuilder::new().build(
+            &shared.augmentations,
+            dataset_cfg.mean.clone(),
+            dataset_cfg.std.clone(),
+            &device,
+        );
 
     shared.save(PathBuf::from(format!("{artifact_dir}/shared_config.json")).as_path());
     dataset_cfg.save(PathBuf::from(format!("{artifact_dir}/dataset_config.json")).as_path());
@@ -143,8 +148,8 @@ pub fn train<B: Backend>(
 
     for epoch in 1..=dataset_cfg.epochs {
         let global_progress = Progress {
-            items_processed: epoch as usize,
-            items_total: dataset_cfg.epochs as usize,
+            items_processed: epoch,
+            items_total: dataset_cfg.epochs,
         };
 
         #[cfg(feature = "viz-rerun")]
@@ -188,19 +193,19 @@ pub fn train<B: Backend>(
                 &metrics_metadata,
                 &mut renderer,
                 &mut logger,
-                epoch as usize,
+                epoch,
             );
             train_metrics.render_train(
                 &mut renderer,
                 &progress,
                 &global_progress,
                 iteration,
-                epoch as i64,
+                epoch,
             );
         }
 
         let model_valid = model.valid();
-        let num_val_iterations = dataloader_val.num_items() / dataset_cfg.batch_size as usize;
+        let num_val_iterations = dataloader_val.num_items() / dataset_cfg.batch_size;
 
         for (iteration, batch) in dataloader_val.iter().enumerate() {
             if interrupter.should_stop() {
@@ -237,14 +242,14 @@ pub fn train<B: Backend>(
                 &metrics_metadata,
                 &mut renderer,
                 &mut logger,
-                epoch as usize,
+                epoch,
             );
             valid_metrics.render_valid(
                 &mut renderer,
                 &progress,
                 &global_progress,
                 iteration,
-                epoch as i64,
+                epoch,
             );
         }
 
@@ -268,11 +273,11 @@ pub fn train<B: Backend>(
         .ok();
 
         logger.log_epoch_summary(EpochSummary {
-            epoch_number: epoch as usize,
+            epoch_number: epoch,
             split: Split::Train,
         });
         logger.log_epoch_summary(EpochSummary {
-            epoch_number: epoch as usize,
+            epoch_number: epoch,
             split: Split::Valid,
         });
 

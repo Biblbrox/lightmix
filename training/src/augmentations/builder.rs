@@ -24,6 +24,12 @@ pub struct AugmentationConfig {
 
 pub struct AugmentationBuilder {}
 
+impl Default for AugmentationBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AugmentationBuilder {
     pub fn new() -> AugmentationBuilder {
         AugmentationBuilder {}

@@ -162,9 +162,9 @@ impl<B: Backend> FastEncoderLayer<B> {
 
         // FFN block with stochastic depth
         let ff_out = self._ff_block(self.norm2.forward(x.clone()));
-        let x = self.drop_path.forward(x, ff_out);
+        
 
-        x
+        self.drop_path.forward(x, ff_out)
         // Merge tokens N -> N/2 before the FFN
         //self.merger.forward(x)
     }
