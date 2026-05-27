@@ -9,12 +9,12 @@ use crate::data::batch::Batch;
 
 pub mod efficientvit;
 pub mod fast_vit;
+pub mod fast_vit3d;
 pub mod token_to_token;
 pub mod vit;
 
 pub trait ModelConfig<B: Backend> {
-    type ValidModel: Module<B>
-        + InferenceStep<Input = Batch<B>, Output = ClassificationOutput<B>>;
+    type ValidModel: Module<B> + InferenceStep<Input = Batch<B>, Output = ClassificationOutput<B>>;
     type TrainModel: AutodiffModule<Autodiff<B>, InnerModule = Self::ValidModel>
         + TrainStep<Input = Batch<Autodiff<B>>, Output = ClassificationOutput<Autodiff<B>>>
         + core::fmt::Display

@@ -91,6 +91,12 @@ pub struct MetricsHandler<B: Backend> {
     metrics: Vec<Box<dyn ErasedMetric<B>>>,
 }
 
+impl<B: Backend> Default for MetricsHandler<B> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<B: Backend> MetricsHandler<B> {
     pub fn new() -> Self {
         Self { metrics: vec![] }
@@ -139,7 +145,7 @@ impl<B: Backend> MetricsHandler<B> {
         progress: &Progress,
         global_progress: &Progress,
         iteration: usize,
-        epoch: i64,
+        epoch: usize,
     ) {
         renderer.render_train(
             TrainingProgress {
@@ -154,7 +160,7 @@ impl<B: Backend> MetricsHandler<B> {
                 },
                 ProgressType::Value {
                     tag: "Epoch".to_string(),
-                    value: epoch as usize,
+                    value: epoch,
                 },
             ],
         );
@@ -166,7 +172,7 @@ impl<B: Backend> MetricsHandler<B> {
         progress: &Progress,
         global_progress: &Progress,
         iteration: usize,
-        epoch: i64,
+        epoch: usize,
     ) {
         renderer.render_valid(
             TrainingProgress {
@@ -181,7 +187,7 @@ impl<B: Backend> MetricsHandler<B> {
                 },
                 ProgressType::Value {
                     tag: "Epoch".to_string(),
-                    value: epoch as usize,
+                    value: epoch,
                 },
             ],
         );

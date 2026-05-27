@@ -30,17 +30,23 @@ polars = { version = "0.53.0", features = [
 toml = "1.1.2"
 walkdir = "2.5.0"
 cubecl = { version = "0.10.0", features = ["cuda"] }
-nalgebra = { version = "0.34.2", features = ["std"] }
+nalgebra = { version = "0.35.0", features = ["std"] }
 image = "0.25.10"
 burn-cubecl = "0.21.0"
 indicatif = "0.18.4"
-tikv-jemallocator = "0.6.1"
+tikv-jemallocator = "0.7.0"
 burn-vision = "0.21.0"
 rand = "0.10.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
-log = "0.4.29"
+log = "0.4.30"
 rand_distr = "0.6.0"
+rerun = { version = "0.32.2", optional = true, default-features = false, features = [
+    "sdk",
+] }
+
+[features]
+viz-rerun = ["rerun"]
 
 [dev-dependencies]
 tempfile = "3.27.0"

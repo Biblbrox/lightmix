@@ -259,11 +259,20 @@ impl EfficientViTConfig {
 
             classifier: ConvBNActConfig::new(c3, c3, 1).init(device),
 
-            head: LinearConfig::new(c3, num_classes).init(device),
+           head: LinearConfig::new(c3, num_classes).init(device),
 
             in_channels,
             image_size,
         }
+    }
+
+    pub fn model_name(&self) -> String {
+        format!(
+            "efficientvit-stem{}-ch{:?}-dep{:?}",
+            self.stem_channels,
+            self.stage_channels,
+            self.stage_depths
+        )
     }
 }
 

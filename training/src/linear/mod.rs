@@ -9,7 +9,7 @@ pub fn optimal_block_count(in_features: usize, out_features: usize) -> usize {
     let target = (in_features.min(out_features) as f64).sqrt() as usize;
 
     // All divisors of gcd, sorted by distance from sqrt — prefer multiples of 16
-    let mut divisors: Vec<usize> = (1..=g).filter(|&d| g % d == 0).collect();
+    let mut divisors: Vec<usize> = (1..=g).filter(|&d| g.is_multiple_of(d)).collect();
     divisors.sort_by_key(|&d| {
         let b = in_features / d;
         let e = out_features / d;

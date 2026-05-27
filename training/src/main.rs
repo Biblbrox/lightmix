@@ -1,17 +1,16 @@
 #![recursion_limit = "2048"]
 
-use std::{env::current_dir, fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 
-use burn::{
-    backend::Autodiff, grad_clipping::GradientClippingConfig, optim::AdamWConfig,
-    tensor::backend::Backend,
-};
+use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::backend::Backend};
 use burn_cuda::Cuda;
 use lightmix::{
-    augmentations::{Pipeline, builder::AugmentationBuilder},
     config::{OptimizerConfig, ParsedConfig},
-    data::dataset::{LazyFiletype, cifar100::Cifar100Dataset},
-    models::{efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, vit::ViTConfig},
+    data::dataset::{DatasetType, LazyFiletype},
+    models::{
+        efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, fast_vit3d::FastViT3DConfig,
+        vit::ViTConfig,
+    },
     training::train,
 };
 use simplelog::{LevelFilter, WriteLogger};
@@ -29,7 +28,13 @@ fn init_logger() {
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
+fn match_dataset(dataset_name: &str) -> DatasetType {
+    dataset_name
+        .parse::<DatasetType>()
+        .expect("Unknown dataset")
+}
+
+fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
     let optimizer_cfg: OptimizerConfig = config.optimizer();
     let ParsedConfig {
         shared,
@@ -52,82 +57,66 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         .with_beta_1(optimizer_cfg.adam_betas[0] as f32)
         .with_beta_2(optimizer_cfg.adam_betas[1] as f32);
 
-    let (pipeline_train, pipeline_val): (Pipeline<Autodiff<B>>, Pipeline<B>) =
-        AugmentationBuilder::new().build(
-            &shared.augmentations,
-            dataset_cfg.mean.clone(),
-            dataset_cfg.std.clone(),
-            &device,
-        );
-    let dataset = Cifar100Dataset::new(dataset_path, LazyFiletype::Arrow);
+    let ds_type = match_dataset(&dataset_name);
 
     match model_name.as_str() {
-        name if name.starts_with("fast_vit") => {
-            let model_cfg: FastViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!(
-                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}-temp{}",
-                model_name,
-                dataset_name,
-                model_cfg.num_heads,
-                model_cfg.hidden_dim,
-                model_cfg.embed_dim,
-                model_cfg.num_encoders,
-                model_cfg.sinkhorn_temp,
-            );
-            train(
+        name if name.starts_with("fast_vit_cloud") => {
+            let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
+            train::<B>(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
+                optimizer,
+            );
+        }
+        name if name.starts_with("fast_vit") => {
+            let model_cfg: FastViTConfig = model_table.try_into().unwrap();
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
+            train::<B>(
+                &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
+                shared,
+                dataset_cfg,
+                device,
+                model_cfg,
+                ds_type,
                 optimizer,
             );
         }
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!(
-                "./experiments/{}-{}-head{}-hid{}-emb{}-enc{}",
-                model_name,
-                dataset_name,
-                model_cfg.num_heads,
-                model_cfg.hidden_dim,
-                model_cfg.embed_dim,
-                model_cfg.num_encoders,
-            );
-            train(
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
+            train::<B>(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
                 optimizer,
             );
         }
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!(
-                "./experiments/{}-{}-stem{}-ch{:?}-dep{:?}",
-                model_name,
-                dataset_name,
-                model_cfg.stem_channels,
-                model_cfg.stage_channels,
-                model_cfg.stage_depths,
-            );
-            train(
+            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
+            train::<B>(
                 &artifact_dir,
+                LazyFiletype::Arrow,
+                dataset_path.into(),
                 shared,
                 dataset_cfg,
                 device,
                 model_cfg,
-                dataset,
-                pipeline_train,
-                pipeline_val,
+                ds_type,
                 optimizer,
             );
         }
@@ -141,19 +130,11 @@ fn main() {
 
     init_logger();
 
-    let cwd = current_dir().unwrap();
-    let path = cwd.join("training/experiments.toml");
-    let localpath = cwd.join("training/experiments.local.toml");
+    let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");
+    let localpath = config_dir.join("experiments.local.toml");
 
-    if !path.exists() {
-        eprintln!("Config path {} doesn't exist", path.display());
-    }
-    if !localpath.exists() {
-        eprintln!("Local config path {} doesn't exist", localpath.display());
-    }
-
-    let config = ParsedConfig::parse(&path, Some(&localpath));
-    println!("Config loaded from {}", path.display());
+    let config = ParsedConfig::load(&config_dir, Some(&localpath));
+    println!("Config loaded from {}", config_dir.display());
 
     run_experiment::<MyBackend>(config, device);
 }

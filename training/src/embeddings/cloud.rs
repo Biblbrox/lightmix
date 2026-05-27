@@ -5,7 +5,6 @@ use burn::{
     tensor::{Distribution, Int, activation::relu, backend::Backend},
 };
 
-// ── CloudPatcher ──────────────────────────────────────────────────────────────
 #[derive(Module, Debug)]
 pub struct CloudPatcher<B: Backend> {
     mlp1: Linear<B>,
@@ -61,7 +60,7 @@ impl<B: Backend> CloudPatcher<B> {
 
         feat.max_dim(1) // [B*M, 1, embed_dim]
             .squeeze_dim::<2>(1) // [B*M, embed_dim]
-            .reshape([b, m, self.mlp2.weight.dims()[0]])
+            .reshape([b, m, self.mlp2.weight.dims()[1]])
     }
 }
 
@@ -76,8 +75,6 @@ impl CloudPatcherConfig {
         }
     }
 }
-
-// ── CloudPatchEmbedding ───────────────────────────────────────────────────────
 
 #[derive(Module, Debug)]
 pub struct CloudPatchEmbedding<B: Backend> {
@@ -151,7 +148,6 @@ impl CloudPatchEmbeddingConfig {
     }
 }
 
-// ── Helpers (unchanged from previous) ────────────────────────────────────────
 fn estimate_density<B: Backend>(points: Tensor<B, 3>, radius: f32) -> Tensor<B, 2> {
     let [b, n, _] = points.dims();
     let p1 = points.clone().unsqueeze_dim::<4>(2).expand([b, n, n, 3]);

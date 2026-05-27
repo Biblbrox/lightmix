@@ -1,83 +1,3 @@
-random_seed = 42
-learning_rate = 1e-3
-num_workers = 4
-cache_dir = "hf://datasets"
-continue_training = false
-resume_epoch = 1
-active_dataset = "cifar100"
-active_model = "fast_vit_tiny"
-
-[imagenet1k]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-num_classes = 1000
-img_size = 224
-in_channels = 3
-std = [0.229, 0.224, 0.225]
-mean = [0.485, 0.456, 0.406]
-
-[tinyimagenet]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-num_classes = 200
-img_size = 64
-in_channels = 3
-std = [0.229, 0.224, 0.225]
-mean = [0.485, 0.456, 0.406]
-
-[food101]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-num_classes = 101
-img_size = 96
-in_channels = 3
-std = [0.229, 0.224, 0.225]
-mean = [0.485, 0.456, 0.406]
-
-[cifar10]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-num_classes = 10
-img_size = 32
-in_channels = 3
-mean = [0.4914, 0.4822, 0.4465]
-std = [0.2470, 0.2435, 0.2616]
-
-[mnist]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-img_size = 28
-num_classes = 10
-in_channels = 1
-mean = [0.1307]
-std = [0.3081]
-
-[cifar100]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-num_classes = 100
-img_size = 32
-in_channels = 3
-std = [0.2675, 0.2565, 0.2761]
-mean = [0.5071, 0.4867, 0.4408]
-
-[fashionmnist]
-batch_size = 32
-val_batch_size = 64
-epochs = 100
-img_size = 28
-num_classes = 10
-in_channels = 1
-mean = [0.1307]
-std = [0.3081]
-
-
 [vit_micro]
 patch_size = 16
 dropout = 0.001
@@ -144,7 +64,6 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
 
-
 [fast_vit_nano]
 patch_size = 16
 dropout = 0.001
@@ -157,8 +76,6 @@ activation = "gelu"
 num_encoders = 3
 sinkhorn_temp = 0.05
 
-
-
 [fast_vit_micro]
 patch_size = 16
 dropout = 0.001
@@ -170,7 +87,6 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 6
 sinkhorn_temp = 0.05
-
 
 [fast_vit_tiny]
 patch_size = 16
@@ -231,6 +147,62 @@ adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
 sinkhorn_temp = 0.05
+
+[fast_vit_cloud_nano]
+embed_dim = 32
+num_heads = 3
+num_encoders = 3
+hidden_dim = 64
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 64
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_tiny]
+embed_dim = 192
+num_heads = 3
+num_encoders = 6
+hidden_dim = 768
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 128
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_small]
+embed_dim = 384
+num_heads = 6
+num_encoders = 12
+hidden_dim = 1536
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 256
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
+
+[fast_vit_cloud_base]
+embed_dim = 768
+num_heads = 12
+num_encoders = 12
+hidden_dim = 3072
+dropout = 0.001
+sinkhorn_temp = 0.05
+activation = "gelu"
+num_centers = 256
+k_neighbours = 16
+density_radius = 0.5
+adam_weight_decay = 0.01
+adam_betas = [0.9, 0.999]
 
 [efficientvit_m0]
 image_size = 224
@@ -327,51 +299,3 @@ mbconv_expand_ratio = 4
 adam_weight_decay = 0.025
 adam_betas = [0.9, 0.999]
 activation = "relu"
-
-
-[augmentations]
-
-
-[[augmentations.transforms_val]]
-name = "normalize"
-
-[[augmentations.transforms_train]]
-name = "normalize"
-
-[[augmentations.transforms_train]]
-name = "random_flip"
-probability = 0.5
-orientation = "horizontal"
-
-[[augmentations.transforms_train]]
-name = "random_flip"
-probability = 0.5
-orientation = "vertical"
-
-# [[augmentations.transforms_train]]
-# name = "random_affine"
-# probability = 0.5
-# degrees = 30.0
-
-# [[augmentations.transforms_train]]
-# name = "color_jitter"
-# brightness = 0.4
-# contrast = 0.4
-# saturation = 0.1
-
-[[augmentations.transforms_train]]
-name = "random_erasing"
-probability = 0.5
-min_scale = 0.02
-max_scale = 0.33
-
-[[augmentations.transforms_train]]
-name = "gaussian_blur"
-probability = 0.5
-kernel_size = 7
-min_sigma = 0.1
-max_sigma = 2.0
-
-[[augmentations.transforms_train]]
-name = "random_grayscale"
-probability = 0.5

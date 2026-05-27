@@ -8,6 +8,15 @@ We mainly focus on visual models and aim to extend developed techniques for mult
 lidar/camera fusion architectures. We strive to make ViT models easier to train and run locally on user
 devices.
 
+What are project goals:
+- To speed up local training and inference with architectural decisions;
+- To simplify usage of developed models without duplication between training and inference;
+- To make model deployment easier with the power of burn library.
+
+What are not project goals:
+- To develop new quantization methods for inference speed-up - there many great project, which do it much better than we could;
+- To implement as many models as possible. We only do that for comparison goals.
+
 ## Training setup
 As we use burn framework, setup should be straightforward. Run ```cargo build --release``` for build
 and ```cargo run --release``` to run the training process. In order to change network params or dataset
