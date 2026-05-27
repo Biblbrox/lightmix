@@ -100,7 +100,7 @@ pub fn train<B: Backend>(
 
     let recorder = DefaultRecorder::new();
 
-    let num_iterations = dataloader_train.num_items() / dataset_cfg.batch_size as usize;
+    let num_iterations = dataloader_train.num_items() / dataset_cfg.batch_size;
     let mut model = model.init_training(
         &device,
         dataset_cfg.in_channels,
