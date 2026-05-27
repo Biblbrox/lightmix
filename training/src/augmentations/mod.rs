@@ -18,6 +18,15 @@ pub struct Pipeline<B: Backend> {
     ph: PhantomData<B>,
 }
 
+impl<B: Backend> Default for Pipeline<B> {
+    fn default() -> Pipeline<B> {
+        Pipeline {
+            transforms: vec![],
+            ph: PhantomData,
+        }
+    }
+}
+
 impl<B: Backend> Pipeline<B> {
     pub fn new(transforms: Vec<Box<dyn Augmentation<B>>>) -> Pipeline<B> {
         Pipeline {
@@ -26,27 +35,10 @@ impl<B: Backend> Pipeline<B> {
         }
     }
 
-    pub fn default() -> Pipeline<B> {
-        Pipeline {
-            transforms: vec![],
-            ph: PhantomData,
-        }
-    }
-
     pub fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        if self.transforms.is_empty() {
-            return input;
-        }
-
-        let mut res = self.transforms[0].execute(input);
-        if self.transforms.len() == 1 {
-            return res;
-        }
-        for tr in self.transforms.iter().skip(1) {
-            res = tr.execute(res);
-        }
-
-        res
+        self.transforms
+            .iter()
+            .fold(input, |acc, tr| tr.execute(acc))
     }
 
     /// Prepends transforms to the front of the pipeline

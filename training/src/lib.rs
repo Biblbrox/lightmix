@@ -8,6 +8,7 @@ pub mod embeddings;
 pub mod encoders;
 pub mod kernels;
 pub mod linear;
+pub mod logging;
 pub mod metrics;
 pub mod mixing;
 pub mod models;

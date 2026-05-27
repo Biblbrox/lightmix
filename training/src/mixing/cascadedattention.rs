@@ -65,7 +65,7 @@ pub struct CascadedGroupAttentionConfig {
 impl CascadedGroupAttentionConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> CascadedGroupAttention<B> {
         assert!(self.num_heads > 0);
-        assert!(self.dim % self.num_heads == 0);
+        assert!(self.dim.is_multiple_of(self.num_heads));
 
         let split_dim = self.dim / self.num_heads;
 

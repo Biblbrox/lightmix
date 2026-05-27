@@ -153,7 +153,7 @@ impl<B: Backend> RecursiveHilbertTokenizer<B> {
             adaptive_avg_pool1d(hierarchical, self.target_tokens)
         } else {
             // Upsample via nearest repeat
-            let repeat_factor = (self.target_tokens + n_total - 1) / n_total;
+            let repeat_factor = self.target_tokens.div_ceil(n_total);
 
             let expanded = hierarchical.repeat_dim(2, repeat_factor);
 

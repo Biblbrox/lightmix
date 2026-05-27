@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -5,7 +6,6 @@ use toml::{Table, Value};
 
 use crate::augmentations::builder::AugmentationConfig;
 
-// shared across all experiments
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedConfig {
     pub random_seed: i64,
@@ -16,10 +16,10 @@ pub struct SharedConfig {
     pub resume_epoch: i64,
     pub active_dataset: String,
     pub active_model: String,
+    #[serde(default)]
     pub augmentations: AugmentationConfig,
 }
 
-// per-dataset section
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasetConfig {
     pub num_classes: usize,
@@ -41,7 +41,7 @@ pub struct OptimizerConfig {
 pub struct ParsedConfig {
     pub shared: SharedConfig,
     pub dataset: DatasetConfig,
-    pub model_table: toml::Table, // raw, to be deserialized into the concrete model type
+    pub model_table: toml::Table, // raw table, deserialized into concrete type at runtime
 }
 
 fn override_conf(mainconf: &mut Table, localconf: &Table) {
@@ -62,18 +62,180 @@ fn override_conf(mainconf: &mut Table, localconf: &Table) {
     }
 }
 
+fn empty_aug_config() -> AugmentationConfig {
+    AugmentationConfig {
+        transforms_train: vec![],
+        transforms_val: vec![],
+    }
+}
+
 impl ParsedConfig {
     pub fn unpack(self) -> (SharedConfig, DatasetConfig, toml::Table) {
         (self.shared, self.dataset, self.model_table)
     }
 
+    /// Load from separate config files in the configs/ directory.
+    pub fn load(config_dir: &Path, local: Option<&Path>) -> Self {
+        let shared_table = Self::read_toml(config_dir.join("experiments.toml"));
+        let datasets_table = Self::read_toml(config_dir.join("datasets.toml"));
+        let models_table = Self::read_toml(config_dir.join("models.toml"));
+
+        // Extract active_dataset and active_model before overrides so we can re-fetch sections
+        let mut shared: SharedConfig = shared_table.clone().try_into().unwrap();
+        let dataset_name = shared.active_dataset.clone();
+        let model_name = shared.active_model.clone();
+
+        let mut dataset_section = datasets_table[&dataset_name].as_table().cloned().unwrap();
+        let mut model_section = models_table[&model_name].as_table().cloned().unwrap();
+
+        // Load augmentations (not in experiments.toml, so attach after parsing shared)
+        let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
+        shared.augmentations = aug_config;
+
+        if let Some(local_path) = local.filter(|p| p.exists()) {
+            let local_table = Self::read_toml(local_path);
+            (shared, dataset_section, model_section) = Self::apply_local_overrides(
+                shared,
+                &shared_table,
+                &datasets_table,
+                &models_table,
+                local_table,
+                config_dir,
+            );
+        }
+
+        let dataset: DatasetConfig = dataset_section.try_into().unwrap();
+
+        ParsedConfig {
+            shared,
+            dataset,
+            model_table: model_section,
+        }
+    }
+
+    /// Apply local config overrides: update shared fields, dataset, and model sections.
+    fn apply_local_overrides(
+        mut shared: SharedConfig,
+        shared_table: &Table,
+        datasets_table: &Table,
+        models_table: &Table,
+        local_table: Table,
+        config_dir: &Path,
+    ) -> (SharedConfig, Table, Table) {
+        let mut dataset_name = shared.active_dataset.clone();
+        let mut model_name = shared.active_model.clone();
+
+        // Collect shared fields and detect active_dataset/active_model changes
+        let mut local_shared_keys: Vec<(String, &Value)> = vec![];
+        for (key, value) in &local_table {
+            match key.as_str() {
+                "random_seed" | "learning_rate" | "cache_dir" | "num_workers"
+                | "continue_training" | "resume_epoch" => {
+                    local_shared_keys.push((key.clone(), value));
+                }
+                "active_dataset" => {
+                    let new_ds = value.as_str().unwrap();
+                    dataset_name = new_ds.to_string();
+                }
+                "active_model" => {
+                    let new_md = value.as_str().unwrap();
+                    model_name = new_md.to_string();
+                }
+                _ => {}
+            }
+        }
+
+        // Update dataset_section and model_section after potential name changes
+        let mut dataset_section = datasets_table[&dataset_name].as_table().cloned().unwrap();
+        let mut model_section = models_table[&model_name].as_table().cloned().unwrap();
+
+        // Re-parse shared after merging local overrides
+        if !local_shared_keys.is_empty() {
+            let mut local_shared = Table::new();
+            for (key, value) in local_shared_keys {
+                local_shared.insert(key, (*value).clone());
+            }
+            let mut merged_shared = shared_table.clone();
+            override_conf(&mut merged_shared, &local_shared);
+            shared = merged_shared.try_into().unwrap();
+            // Re-attach augmentations (not in experiments.toml anymore)
+            let aug_config = Self::parse_augmentations(config_dir.join("augmentations.toml"));
+            shared.augmentations = aug_config;
+        }
+
+        // Merge dataset section from local if present
+        if let Some(ds_local) = local_table.get(&dataset_name).and_then(|v| v.as_table()) {
+            override_conf(&mut dataset_section, ds_local);
+        }
+
+        // Merge model section from local if present
+        if let Some(md_local) = local_table.get(&model_name).and_then(|v| v.as_table()) {
+            override_conf(&mut model_section, md_local);
+        }
+
+        (shared, dataset_section, model_section)
+    }
+
+    /// Parse [[transforms]] array with `kind` discriminator (train/val).
+    fn parse_augmentations<P: AsRef<Path>>(path: P) -> AugmentationConfig {
+        let path = path.as_ref();
+        let file = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(_) => return empty_aug_config(),
+        };
+
+        let table: toml::Table = match file.parse() {
+            Ok(t) => t,
+            Err(_) => return empty_aug_config(),
+        };
+
+        let mut transforms_train: Vec<crate::augmentations::builder::TransformConfig> = vec![];
+        let mut transforms_val: Vec<crate::augmentations::builder::TransformConfig> = vec![];
+
+        if let Some(transforms) = table.get("transforms").and_then(|v| v.as_array()) {
+            for item in transforms {
+                let table = match item.as_table() {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                let name = table
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let kind = table.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Collect params (everything except name and kind)
+                let mut params: std::collections::HashMap<String, toml::Value> = HashMap::new();
+                for (k, v) in table {
+                    if *k != "name" && *k != "kind" {
+                        params.insert(k.clone(), v.clone());
+                    }
+                }
+
+                let transform = crate::augmentations::builder::TransformConfig { name, params };
+
+                match kind {
+                    "train" => transforms_train.push(transform),
+                    "val" => transforms_val.push(transform),
+                    _ => {}
+                }
+            }
+        }
+
+        AugmentationConfig {
+            transforms_train,
+            transforms_val,
+        }
+    }
+
+    /// Legacy: parse from a single combined TOML file (backward compat with tests).
     pub fn parse(path: &Path, local: Option<&Path>) -> Self {
-        let file = std::fs::read_to_string(path).unwrap();
-        let mut table: toml::Table = file.parse().unwrap();
+        let mut table: toml::Table = Self::read_toml(path);
 
         if let Some(local_path) = local {
-            let local_file = std::fs::read_to_string(local_path).unwrap();
-            let local_table: toml::Table = local_file.parse().unwrap();
+            let local_table = Self::read_toml(local_path);
             override_conf(&mut table, &local_table);
         }
 
@@ -85,6 +247,29 @@ impl ParsedConfig {
             shared,
             dataset,
             model_table,
+        }
+    }
+
+    fn read_toml<P: AsRef<Path>>(path: P) -> Table {
+        let path = path.as_ref();
+        match std::fs::read_to_string(path) {
+            Ok(content) => content.parse().unwrap_or_else(|e| {
+                panic!("Failed to parse {}: {}", path.display(), e);
+            }),
+            Err(e) => {
+                // Return empty table for optional files (.local.toml) instead of panicking
+                if path
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .map(|n| n.ends_with(".local.toml"))
+                    .unwrap_or(false)
+                {
+                    eprintln!("Local config not found at {}, skipping", path.display());
+                    Table::new()
+                } else {
+                    panic!("Failed to read {}: {}", path.display(), e);
+                }
+            }
         }
     }
 
@@ -260,13 +445,11 @@ hidden_dim = 128
         let (_, dataset, model_table) = config.unpack();
         let model: FastViTConfig = model_table.try_into().unwrap();
 
-        // Overridden values
         assert_eq!(dataset.batch_size, 8);
         assert_eq!(dataset.epochs, 10);
         assert_eq!(model.dropout, 0.2);
         assert_eq!(model.hidden_dim, 128);
 
-        // Unchanged values
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(model.patch_size, 7);
     }
@@ -290,11 +473,9 @@ num_heads = 4
         let (_, dataset, model_table) = config.unpack();
         let model: FastViTConfig = model_table.try_into().unwrap();
 
-        // Overridden
         assert_eq!(dataset.batch_size, 16);
         assert_eq!(model.num_heads, 4);
 
-        // Unchanged
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(model.embed_dim, 512);
     }

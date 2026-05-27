@@ -54,11 +54,7 @@ impl<B: Backend> FastViT3D<B> {
 }
 
 impl FastViT3DConfig {
-    pub fn init<B: Backend>(
-        &self,
-        device: &B::Device,
-        num_classes: usize,
-    ) -> FastViT3D<B> {
+    pub fn init<B: Backend>(&self, device: &B::Device, num_classes: usize) -> FastViT3D<B> {
         FastViT3D {
             embedding_block: CloudPatchEmbeddingConfig::new(
                 self.num_centers,
@@ -86,6 +82,19 @@ impl FastViT3DConfig {
             linear: LinearConfig::new(self.embed_dim, num_classes).init(device),
             num_centers: self.num_centers,
         }
+    }
+
+    pub fn model_name(&self) -> String {
+        format!(
+            "fast_vit_cloud-head{}-hid{}-emb{}-enc{}-temp{}-centers{}-kn{}",
+            self.num_heads,
+            self.hidden_dim,
+            self.embed_dim,
+            self.num_encoders,
+            self.sinkhorn_temp,
+            self.num_centers,
+            self.k_neighbours
+        )
     }
 }
 
@@ -134,11 +143,10 @@ impl<B: AutodiffBackend> TrainStep for FastViT3D<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> TrainOutput<ClassificationOutput<B>> {
-        let points = batch.data.clone().reshape([
-            batch.batch_size(),
-            NUM_POINTS,
-            NUM_CHANNELS,
-        ]);
+        let points = batch
+            .data
+            .clone()
+            .reshape([batch.batch_size(), NUM_POINTS, NUM_CHANNELS]);
         let item = self.forward_classification(points, batch.targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
@@ -150,11 +158,10 @@ impl<B: Backend> InferenceStep for FastViT3D<B> {
     type Output = ClassificationOutput<B>;
 
     fn step(&self, batch: Batch<B>) -> ClassificationOutput<B> {
-        let points = batch.data.clone().reshape([
-            batch.batch_size(),
-            NUM_POINTS,
-            NUM_CHANNELS,
-        ]);
+        let points = batch
+            .data
+            .clone()
+            .reshape([batch.batch_size(), NUM_POINTS, NUM_CHANNELS]);
         self.forward_classification(points, batch.targets)
     }
 }
@@ -201,10 +208,8 @@ mod tests {
     #[ignore] // argtopk not implemented on Flex (CPU) backend — requires CUDA
     fn test_fast_vit3d() {
         let device = Device::default();
-        let test_points = Tensor::<B, 3>::zeros(
-            Shape::new([BATCH_SIZE, NUM_POINTS, NUM_CHANNELS]),
-            &device,
-        );
+        let test_points =
+            Tensor::<B, 3>::zeros(Shape::new([BATCH_SIZE, NUM_POINTS, NUM_CHANNELS]), &device);
         let model = test_config().init::<B>(&device, NUM_CLASSES);
         let output = model.forward(test_points);
         assert_eq!(output.shape(), Shape::new([BATCH_SIZE, NUM_CLASSES]));

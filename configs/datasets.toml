@@ -1,0 +1,79 @@
+[imagenet1k]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 1000
+img_size = 224
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[tinyimagenet]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 200
+img_size = 64
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[food101]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 101
+img_size = 96
+in_channels = 3
+std = [0.229, 0.224, 0.225]
+mean = [0.485, 0.456, 0.406]
+
+[cifar10]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 10
+img_size = 32
+in_channels = 3
+mean = [0.4914, 0.4822, 0.4465]
+std = [0.2470, 0.2435, 0.2616]
+
+[mnist]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 28
+num_classes = 10
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+
+[cifar100]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+num_classes = 100
+img_size = 32
+in_channels = 3
+std = [0.2675, 0.2565, 0.2761]
+mean = [0.5071, 0.4867, 0.4408]
+
+[fashionmnist]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 28
+num_classes = 10
+in_channels = 1
+mean = [0.1307]
+std = [0.3081]
+
+[modelnet40]
+batch_size = 32
+val_batch_size = 64
+epochs = 100
+img_size = 0
+num_classes = 40
+in_channels = 3
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]

@@ -86,7 +86,7 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                                     batch = map(batch);
                                 }
 
-                                if let Some(_) = shuffle {
+                                if shuffle.is_some() {
                                     batch = batch
                                         .sample_n_literal(batch.height(), false, true, Some(seed))
                                         .unwrap();
@@ -116,10 +116,13 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
     }
 
     fn batch(&mut self) -> Option<DataFrame> {
-        match self.recv.as_mut().unwrap().get_mut().unwrap().recv() {
-            Ok(maybe) => maybe,
-            Err(_) => None,
-        }
+        self.recv
+            .as_mut()
+            .unwrap()
+            .get_mut()
+            .unwrap()
+            .recv()
+            .unwrap_or_default()
     }
 
     fn batch_size(&self) -> usize {

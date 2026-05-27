@@ -28,6 +28,12 @@ pub struct BatchTimeMetric {
     count: usize,
 }
 
+impl Default for BatchTimeMetric {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BatchTimeMetric {
     pub fn new() -> Self {
         Self {
