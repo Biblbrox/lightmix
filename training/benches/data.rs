@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use cubecl::cpu::CpuDevice;
 use indicatif::ProgressBar;
 use lightmix::augmentations::colors::ColorJitter;
 use lightmix::augmentations::normalize::Normalize;
 use lightmix::augmentations::rotation::RandomAffine;
 use lightmix::augmentations::{Augmentation, Pipeline};
-use lightmix::benchmarks::{GpuBackend, GpuDevice};
+use lightmix::benchmarks::CpuBackend;
 use lightmix::data::batch::cifar100::Cifar100Batcher;
 use lightmix::data::batch::imagenet1k::ImageNet1kBatcher;
 use lightmix::data::builder::StreamingDataLoaderBuilder;
@@ -32,10 +33,10 @@ fn test_imagenet1k() {
     let shuffle_seed = 42;
     let batch_size = 128;
 
-    type B = GpuBackend;
-    let device = GpuDevice::default();
+    type B = CpuBackend;
+    let device = CpuDevice;
 
-    let ds = ImageNet1kDataset::new(imagenet1k_path, LazyFiletype::Arrow);
+    let ds = ImageNet1kDataset {};
 
     let std = vec![0.229, 0.224, 0.225];
     let mean = vec![0.485, 0.456, 0.406];
@@ -53,7 +54,7 @@ fn test_imagenet1k() {
         .with_strategy(strategy.clone().with_shuffle(shuffle_seed))
         .with_transforms(Arc::new(pipeline))
         .with_device(device)
-        .build(ds.test());
+        .build(ds.test(imagenet1k_path, LazyFiletype::Arrow));
 
     let pbar = ProgressBar::new(dl.num_items() as u64);
     let start = Instant::now();
@@ -71,17 +72,17 @@ fn test_cifar100() {
     let shuffle_seed = 42;
     let batch_size = 128;
 
-    type B = GpuBackend;
-    let device = GpuDevice::default();
+    type B = CpuBackend;
+    let device = CpuDevice;
 
-    let ds = Cifar100Dataset::new(cifar100_path, LazyFiletype::Arrow);
+    let ds = Cifar100Dataset {};
     let batcher = Cifar100Batcher::new();
     let strategy = BufferedBatchStrategy::new(batch_size, 10, 4);
 
     let dl = StreamingDataLoaderBuilder::<B>::new(batcher.clone())
         .with_strategy(strategy.clone().with_shuffle(shuffle_seed))
         .with_device(device)
-        .build(ds.train());
+        .build(ds.train(cifar100_path, LazyFiletype::Arrow));
 
     let pbar = ProgressBar::new(dl.num_items() as u64);
     let start = Instant::now();

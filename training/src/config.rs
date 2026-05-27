@@ -30,9 +30,15 @@ pub struct DatasetConfig {
     pub batch_size: usize,
     pub val_batch_size: usize,
     pub epochs: usize,
+    #[serde(default = "default_dataset_type")]
+    pub dataset_type: String,
     /// Resolved augmentation pipeline for this dataset.
     #[serde(default)]
     pub augmentations: AugmentationConfig,
+}
+
+fn default_dataset_type() -> String {
+    "Arrow".to_string()
 }
 
 /// Temporary struct used only during config parsing (not serialized).
@@ -44,6 +50,8 @@ struct RawDatasetConfig {
     pub batch_size: usize,
     pub val_batch_size: usize,
     pub epochs: usize,
+    #[serde(default)]
+    pub dataset_type: String,
     #[serde(default)]
     pub augmentation_pipeline: String,
     #[serde(default)]
@@ -63,6 +71,11 @@ impl From<RawDatasetConfig> for DatasetConfig {
             batch_size: raw.batch_size,
             val_batch_size: raw.val_batch_size,
             epochs: raw.epochs,
+            dataset_type: if raw.dataset_type.is_empty() {
+                "Arrow".to_string()
+            } else {
+                raw.dataset_type
+            },
             augmentations: AugmentationConfig::default(),
         }
     }
@@ -154,6 +167,11 @@ impl ParsedConfig {
                 batch_size: raw_dataset.batch_size,
                 val_batch_size: raw_dataset.val_batch_size,
                 epochs: raw_dataset.epochs,
+                dataset_type: if raw_dataset.dataset_type.is_empty() {
+                    "Arrow".to_string()
+                } else {
+                    raw_dataset.dataset_type
+                },
                 augmentations: resolved,
             },
             model_table: model_section,

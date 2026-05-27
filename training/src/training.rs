@@ -59,7 +59,6 @@ pub fn build_metrics<B: Backend>() -> MetricsHandler<B> {
 }
 
 pub fn train<B: Backend>(
-    dataset_type: LazyFiletype,
     dataset_path: PlRefPath,
     shared: SharedConfig,
     dataset_cfg: DatasetConfig,
@@ -68,6 +67,11 @@ pub fn train<B: Backend>(
     dataset: DatasetType,
     optimizer: AdamWConfig,
 ) {
+    let file_type = dataset_cfg
+        .dataset_type
+        .parse::<LazyFiletype>()
+        .expect("invalid dataset_type");
+
     let artifact_dir: &String = &format!(
         "./experiments/{}-{}",
         shared.active_model, shared.active_dataset
@@ -100,12 +104,12 @@ pub fn train<B: Backend>(
         .with_strategy(strategy.clone().with_shuffle(shared.random_seed as u64))
         .with_transforms(Arc::new(pipeline_train))
         .with_device(device.clone())
-        .build(dataset.train(dataset_path.clone(), dataset_type.clone()));
+        .build(dataset.train(dataset_path.clone(), file_type.clone()));
     let dataloader_val = StreamingDataLoaderBuilder::<B>::new(batcher_val)
         .with_strategy(strategy)
         .with_transforms(Arc::new(pipeline_val))
         .with_device(device.clone())
-        .build(dataset.validation(dataset_path, dataset_type));
+        .build(dataset.validation(dataset_path, file_type.clone()));
 
     let recorder = DefaultRecorder::new();
 

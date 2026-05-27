@@ -6,7 +6,7 @@ use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::ba
 use burn_cuda::Cuda;
 use lightmix::{
     config::{OptimizerConfig, ParsedConfig},
-    data::dataset::{DatasetType, LazyFiletype},
+    data::dataset::DatasetType,
     models::{
         efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, fast_vit3d::FastViT3DConfig,
         vit::ViTConfig,
@@ -63,7 +63,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("fast_vit_cloud") => {
             let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
             train::<B>(
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -76,7 +75,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
             train::<B>(
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -89,7 +87,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
             train::<B>(
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -102,7 +99,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
             train::<B>(
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
