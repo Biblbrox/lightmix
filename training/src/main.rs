@@ -1,6 +1,6 @@
 #![recursion_limit = "2048"]
 
-use std::{env::current_dir, fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 
 use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::backend::Backend};
 use burn_cuda::Cuda;
@@ -130,19 +130,11 @@ fn main() {
 
     init_logger();
 
-    let cwd = current_dir().unwrap();
-    let path = cwd.join("training/experiments.toml");
-    let localpath = cwd.join("training/experiments.local.toml");
+    let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");
+    let localpath = config_dir.join("experiments.local.toml");
 
-    if !path.exists() {
-        eprintln!("Config path {} doesn't exist", path.display());
-    }
-    if !localpath.exists() {
-        eprintln!("Local config path {} doesn't exist", localpath.display());
-    }
-
-    let config = ParsedConfig::parse(&path, Some(&localpath));
-    println!("Config loaded from {}", path.display());
+    let config = ParsedConfig::load(&config_dir, Some(&localpath));
+    println!("Config loaded from {}", config_dir.display());
 
     run_experiment::<MyBackend>(config, device);
 }

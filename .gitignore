@@ -40,6 +40,7 @@ experiments/*
 .cargo
 target
 Cargo.lock
+configs/experiments.local.toml
 *.local.toml
 
 # Profiling & Logging

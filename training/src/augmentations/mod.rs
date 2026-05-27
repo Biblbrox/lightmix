@@ -36,19 +36,9 @@ impl<B: Backend> Pipeline<B> {
     }
 
     pub fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        if self.transforms.is_empty() {
-            return input;
-        }
-
-        let mut res = self.transforms[0].execute(input);
-        if self.transforms.len() == 1 {
-            return res;
-        }
-        for tr in self.transforms.iter().skip(1) {
-            res = tr.execute(res);
-        }
-
-        res
+        self.transforms
+            .iter()
+            .fold(input, |acc, tr| tr.execute(acc))
     }
 
     /// Prepends transforms to the front of the pipeline

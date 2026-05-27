@@ -47,6 +47,17 @@ pub trait Saveable: Serialize {
 impl Saveable for SharedConfig {}
 impl Saveable for DatasetConfig {}
 
+pub fn build_metrics<B: Backend>() -> MetricsHandler<B> {
+    MetricsHandler::<B>::new()
+        .add(LossMetric::new(), |o| LossInput::new(o.loss()))
+        .add(AccuracyMetric::new(), |o| {
+            AccuracyInput::new(o.output(), o.targets())
+        })
+        .add(TopKAccuracyMetric::new(5), |o| {
+            TopKAccuracyInput::new(o.output(), o.targets())
+        })
+}
+
 pub fn train<B: Backend>(
     artifact_dir: &str,
     dataset_type: LazyFiletype,
@@ -115,22 +126,8 @@ pub fn train<B: Backend>(
     .init()
     .unwrap();
 
-    let mut train_metrics = MetricsHandler::<Autodiff<B>>::new()
-        .add(LossMetric::new(), |o| LossInput::new(o.loss()))
-        .add(AccuracyMetric::new(), |o| {
-            AccuracyInput::new(o.output(), o.targets())
-        })
-        .add(TopKAccuracyMetric::new(5), |o| {
-            TopKAccuracyInput::new(o.output(), o.targets())
-        });
-    let mut valid_metrics = MetricsHandler::<B>::new()
-        .add(LossMetric::new(), |o| LossInput::new(o.loss()))
-        .add(AccuracyMetric::new(), |o| {
-            AccuracyInput::new(o.output(), o.targets())
-        })
-        .add(TopKAccuracyMetric::new(5), |o| {
-            TopKAccuracyInput::new(o.output(), o.targets())
-        });
+    let mut train_metrics = build_metrics::<Autodiff<B>>();
+    let mut valid_metrics = build_metrics::<B>();
 
     let mut stop_flag = false;
     let mut logger = FileMetricLogger::new(artifact_dir);

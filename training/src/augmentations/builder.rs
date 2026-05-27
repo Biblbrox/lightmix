@@ -22,6 +22,15 @@ pub struct AugmentationConfig {
     pub transforms_val: Vec<TransformConfig>,
 }
 
+impl Default for AugmentationConfig {
+    fn default() -> Self {
+        AugmentationConfig {
+            transforms_train: vec![],
+            transforms_val: vec![],
+        }
+    }
+}
+
 pub struct AugmentationBuilder {}
 
 impl Default for AugmentationBuilder {
