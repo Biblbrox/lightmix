@@ -14,12 +14,10 @@ pub struct SharedConfig {
     pub num_workers: i64,
     pub continue_training: bool,
     pub resume_epoch: i64,
+    #[serde(default)]
+    pub early_stopping: bool,
     pub active_dataset: String,
     pub active_model: String,
-    /// Legacy single-file augmentations (backward compat with tests only).
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub augmentations: Option<AugmentationConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,14 +106,6 @@ fn override_conf(mainconf: &mut Table, localconf: &Table) {
                 let _ = mainconf.insert(localkey.clone(), localvalue.clone());
             }
         }
-    }
-}
-
-#[allow(dead_code)]
-fn empty_aug_config() -> AugmentationConfig {
-    AugmentationConfig {
-        transforms_train: vec![],
-        transforms_val: vec![],
     }
 }
 
@@ -363,33 +353,6 @@ impl ParsedConfig {
         pipelines
     }
 
-    /// Legacy: parse from a single combined TOML file (backward compat with tests).
-    pub fn parse(path: &Path, local: Option<&Path>) -> Self {
-        let mut table: toml::Table = Self::read_toml(path);
-
-        if let Some(local_path) = local {
-            let local_table = Self::read_toml(local_path);
-            override_conf(&mut table, &local_table);
-        }
-
-        let shared: SharedConfig = table.clone().try_into().unwrap();
-        let mut dataset: DatasetConfig = table[&shared.active_dataset].clone().try_into().unwrap();
-
-        // Extract augmentation config from legacy [augmentations] section (set by serde)
-        if let Some(aug) = &shared.augmentations {
-            dataset.augmentations.transforms_train = aug.transforms_train.clone();
-            dataset.augmentations.transforms_val = aug.transforms_val.clone();
-        }
-
-        let model_table = table[&shared.active_model].as_table().unwrap().clone();
-
-        ParsedConfig {
-            shared,
-            dataset,
-            model_table,
-        }
-    }
-
     fn read_toml<P: AsRef<Path>>(path: P) -> Table {
         let path = path.as_ref();
         match std::fs::read_to_string(path) {
@@ -426,13 +389,16 @@ impl ParsedConfig {
 mod tests {
     use crate::config::{DatasetConfig, OptimizerConfig, ParsedConfig, SharedConfig};
     use crate::models::fast_vit::FastViTConfig;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn create_test_config() -> (TempDir, std::path::PathBuf) {
+    /// Creates the full multi-file config directory with experiments.toml,
+    /// datasets.toml, models.toml, and augmentations.toml.
+    fn create_test_config() -> TempDir {
         let dir = TempDir::new().unwrap();
-        let config_path = dir.path().join("experiments.toml");
 
-        let config_content = r#"
+        // experiments.toml — shared settings + active references
+        let experiments = r#"
 random_seed = 42
 learning_rate = 0.001
 cache_dir = "/tmp/cache"
@@ -441,25 +407,11 @@ continue_training = false
 resume_epoch = 0
 active_dataset = "mnist"
 active_model = "model"
+"#;
+        std::fs::write(dir.path().join("experiments.toml"), experiments).unwrap();
 
-[augmentations]
-mean = [0.1307]
-std = [0.3081]
-
-[[augmentations.transforms_train]]
-name = "normalize"
-
-[[augmentations.transforms_train]]
-name = "random_flip"
-probability = 0.5
-orientation = "horizontal"
-
-[[augmentations.transforms_train]]
-name = "color_jitter"
-brightness = 0.2
-contrast = 0.2
-saturation = 0.2
-
+        // datasets.toml — dataset-specific settings + pipeline reference
+        let datasets = r#"
 [mnist]
 num_classes = 10
 img_size = 28
@@ -467,7 +419,22 @@ in_channels = 1
 batch_size = 64
 val_batch_size = 128
 epochs = 100
+dataset_type = "Arrow"
+augmentation_pipeline = "image"
+transforms = ["normalize", "random_flip"]
 
+[[mnist.augmentations.normalize]]
+mean = [0.1307]
+std = [0.3081]
+
+[[mnist.augmentations.random_flip]]
+probability = 0.5
+orientation = "horizontal"
+"#;
+        std::fs::write(dir.path().join("datasets.toml"), datasets).unwrap();
+
+        // models.toml — model-specific settings + optimizer defaults
+        let models = r#"
 [model]
 patch_size = 7
 num_heads = 8
@@ -480,16 +447,39 @@ num_encoders = 6
 embed_dim = 512
 sinkhorn_temp = 0.1
 "#;
+        std::fs::write(dir.path().join("models.toml"), models).unwrap();
 
-        std::fs::write(&config_path, config_content).unwrap();
-        (dir, config_path)
+        // augmentations.toml — pipeline defaults (referenced by dataset)
+        let augmentations = r#"
+[defaults.image]
+[[defaults.image.transforms]]
+name = "normalize"
+kind = "train"
+mean = [0.5]
+std = [0.5]
+
+[[defaults.image.transforms]]
+name = "random_flip"
+kind = "train"
+probability = 0.5
+orientation = "horizontal"
+
+[[defaults.image.transforms]]
+name = "color_jitter"
+kind = "train"
+brightness = 0.2
+contrast = 0.2
+saturation = 0.2
+"#;
+        std::fs::write(dir.path().join("augmentations.toml"), augmentations).unwrap();
+
+        dir
     }
 
-    fn create_test_local_config() -> (TempDir, std::path::PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let local_config_path = dir.path().join("experiments.local.toml");
-
-        let local_config_content = r#"
+    /// Creates a local override file alongside the main config directory.
+    fn create_test_local_config(base_dir: &TempDir) -> PathBuf {
+        let local_path = base_dir.path().join("experiments.local.toml");
+        let local_content = r#"
 [mnist]
 batch_size = 8
 epochs = 10
@@ -498,15 +488,15 @@ epochs = 10
 dropout = 0.2
 hidden_dim = 128
 "#;
-
-        std::fs::write(&local_config_path, local_config_content).unwrap();
-        (dir, local_config_path)
+        std::fs::write(&local_path, local_content).unwrap();
+        local_path
     }
 
     #[test]
-    fn test_parse_basic_shared_config() {
-        let (_dir, config_path) = create_test_config();
-        let config = ParsedConfig::parse(&config_path, None);
+    fn test_load_basic_shared_config() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let config = ParsedConfig::load(config_dir, None);
         let shared: SharedConfig = config.shared;
 
         assert_eq!(shared.random_seed, 42);
@@ -520,9 +510,10 @@ hidden_dim = 128
     }
 
     #[test]
-    fn test_parse_basic_dataset_config() {
-        let (_dir, config_path) = create_test_config();
-        let config = ParsedConfig::parse(&config_path, None);
+    fn test_load_basic_dataset_config() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let config = ParsedConfig::load(config_dir, None);
         let dataset: DatasetConfig = config.dataset;
 
         assert_eq!(dataset.num_classes, 10);
@@ -534,9 +525,10 @@ hidden_dim = 128
     }
 
     #[test]
-    fn test_parse_basic_model_config() {
-        let (_dir, config_path) = create_test_config();
-        let config = ParsedConfig::parse(&config_path, None);
+    fn test_load_basic_model_config() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let config = ParsedConfig::load(config_dir, None);
         let model: FastViTConfig = config.model();
 
         assert_eq!(model.patch_size, 7);
@@ -550,9 +542,10 @@ hidden_dim = 128
     }
 
     #[test]
-    fn test_parse_optimizer_config() {
-        let (_dir, config_path) = create_test_config();
-        let config = ParsedConfig::parse(&config_path, None);
+    fn test_load_optimizer_config() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let config = ParsedConfig::load(config_dir, None);
         let optimizer: OptimizerConfig = config.optimizer();
 
         assert_eq!(optimizer.adam_weight_decay, 0.0001);
@@ -560,30 +553,42 @@ hidden_dim = 128
     }
 
     #[test]
-    fn test_parse_augmentations() {
-        let (_dir, config_path) = create_test_config();
-        let config = ParsedConfig::parse(&config_path, None);
-        let shared: SharedConfig = config.shared;
-        let transforms = &shared.augmentations.as_ref().unwrap().transforms_train;
+    fn test_load_augmentations_resolved() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let config = ParsedConfig::load(config_dir, None);
+        let dataset: DatasetConfig = config.dataset;
 
-        assert_eq!(transforms.len(), 3);
-        assert_eq!(transforms[0].name, "normalize");
-        assert_eq!(transforms[1].name, "random_flip");
-        assert_eq!(transforms[1].params["probability"].as_float().unwrap(), 0.5);
+        // New approach: augmentations are resolved into the dataset config,
+        // not stored in SharedConfig.augmentations.
+        let transforms = &dataset.augmentations;
+
+        assert_eq!(transforms.transforms_train.len(), 2);
+        assert_eq!(transforms.transforms_val.len(), 0);
+
+        assert_eq!(transforms.transforms_train[0].name, "normalize");
+        assert_eq!(transforms.transforms_train[1].name, "random_flip");
         assert_eq!(
-            transforms[1].params["orientation"].as_str().unwrap(),
+            transforms.transforms_train[1].params["probability"]
+                .as_float()
+                .unwrap(),
+            0.5
+        );
+        assert_eq!(
+            transforms.transforms_train[1].params["orientation"]
+                .as_str()
+                .unwrap(),
             "horizontal"
         );
-        assert_eq!(transforms[2].name, "color_jitter");
-        assert_eq!(transforms[2].params["brightness"].as_float().unwrap(), 0.2);
     }
 
     #[test]
-    fn test_parse_with_override() {
-        let (_dir, config_path) = create_test_config();
-        let (_local_dir, local_config_path) = create_test_local_config();
+    fn test_load_with_override() {
+        let dir = create_test_config();
+        let config_dir = &dir.path();
+        let local_path = create_test_local_config(&dir);
 
-        let config = ParsedConfig::parse(&config_path, Some(&local_config_path));
+        let config = ParsedConfig::load(config_dir, Some(&local_path));
         let (_, dataset, model_table) = config.unpack();
         let model: FastViTConfig = model_table.try_into().unwrap();
 
@@ -592,32 +597,35 @@ hidden_dim = 128
         assert_eq!(model.dropout, 0.2);
         assert_eq!(model.hidden_dim, 128);
 
+        // Fields not overridden should retain base values
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(model.patch_size, 7);
     }
 
     #[test]
     fn test_override_adds_new_fields() {
-        let (_dir, config_path) = create_test_config();
-        let local_dir = TempDir::new().unwrap();
-        let local_config_path = local_dir.path().join("experiments.local.toml");
+        let dir = create_test_config();
+        let config_dir = &dir.path();
 
-        let local_config_content = r#"
+        // Create a local file that only overrides specific fields
+        let local_content = r#"
 [mnist]
 batch_size = 16
 
 [model]
 num_heads = 4
 "#;
-        std::fs::write(&local_config_path, local_config_content).unwrap();
+        let local_path = dir.path().join("experiments.local.toml");
+        std::fs::write(&local_path, local_content).unwrap();
 
-        let config = ParsedConfig::parse(&config_path, Some(&local_config_path));
+        let config = ParsedConfig::load(config_dir, Some(&local_path));
         let (_, dataset, model_table) = config.unpack();
         let model: FastViTConfig = model_table.try_into().unwrap();
 
         assert_eq!(dataset.batch_size, 16);
         assert_eq!(model.num_heads, 4);
 
+        // Unchanged fields should retain base values
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(model.embed_dim, 512);
     }
