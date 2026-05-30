@@ -1,44 +1,50 @@
-[[transforms]]
+[defaults.image]
+
+[[defaults.image.transforms]]
 name = "normalize"
 kind = "val"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "normalize"
 kind = "train"
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "random_flip"
 kind = "train"
 probability = 0.5
 orientation = "horizontal"
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "random_flip"
 kind = "train"
 probability = 0.5
 orientation = "vertical"
 
-# [[transforms]]
+# [[defaults.image.transforms]]
 # name = "random_affine"
 # kind = "train"
 # probability = 0.5
 # degrees = 30.0
 
-# [[transforms]]
+# [[defaults.image.transforms]]
 # name = "color_jitter"
 # kind = "train"
 # brightness = 0.4
 # contrast = 0.4
 # saturation = 0.1
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "random_erasing"
 kind = "train"
 probability = 0.5
 min_scale = 0.02
 max_scale = 0.33
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "gaussian_blur"
 kind = "train"
 probability = 0.5
@@ -46,7 +52,21 @@ kernel_size = 7
 min_sigma = 0.1
 max_sigma = 2.0
 
-[[transforms]]
+[[defaults.image.transforms]]
 name = "random_grayscale"
 kind = "train"
 probability = 0.5
+
+[defaults.cloud]
+
+[[defaults.cloud.transforms]]
+name = "normalize"
+kind = "val"
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]
+
+[[defaults.cloud.transforms]]
+name = "normalize"
+kind = "train"
+mean = [0.0, 0.0, 0.0]
+std = [1.0, 1.0, 1.0]

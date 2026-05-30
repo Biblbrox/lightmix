@@ -412,7 +412,7 @@ mod tests {
         let values: Vec<f32> = output_data.as_slice::<f32>().unwrap().to_vec();
 
         for &v in &values {
-            assert!(v >= 0.0 && v <= 1.0, "Value {} out of [0, 1] range", v);
+            assert!((0.0..=1.0).contains(&v), "Value {} out of [0, 1] range", v);
         }
     }
 

@@ -14,7 +14,7 @@ pub struct TransformConfig {
     pub params: std::collections::HashMap<String, toml::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct AugmentationConfig {
     #[serde(default)]
     pub transforms_train: Vec<TransformConfig>,
@@ -22,13 +22,21 @@ pub struct AugmentationConfig {
     pub transforms_val: Vec<TransformConfig>,
 }
 
-impl Default for AugmentationConfig {
-    fn default() -> Self {
-        AugmentationConfig {
-            transforms_train: vec![],
-            transforms_val: vec![],
-        }
-    }
+/// A single transform definition from a pipeline defaults section.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineDefault {
+    pub name: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(flatten)]
+    pub params: std::collections::HashMap<String, toml::Value>,
+}
+
+/// A complete pipeline defaults section (e.g., `[defaults.image]`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PipelineDefaults {
+    #[serde(default)]
+    pub transforms: Vec<PipelineDefault>,
 }
 
 pub struct AugmentationBuilder {}
@@ -48,17 +56,31 @@ impl AugmentationBuilder {
         &self,
         transform: &TransformConfig,
         transforms_vec: &mut Vec<Box<dyn Augmentation<B>>>,
-        mean: &Vec<f32>,
-        std: &Vec<f32>,
         device: &B::Device,
     ) {
         match transform.name.as_str() {
             "normalize" => {
-                transforms_vec.push(Box::new(Normalize::<B>::new(
-                    std.clone(),
-                    mean.clone(),
-                    device,
-                )));
+                let mean = transform
+                    .params
+                    .get("mean")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_float().map(|f| f as f32))
+                            .collect::<Vec<f32>>()
+                    })
+                    .unwrap_or_default();
+                let std = transform
+                    .params
+                    .get("std")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_float().map(|f| f as f32))
+                            .collect::<Vec<f32>>()
+                    })
+                    .unwrap_or_default();
+                transforms_vec.push(Box::new(Normalize::<B>::new(std, mean, device)));
             }
             "random_flip" => {
                 let p = transform.params["probability"].as_float().unwrap();
@@ -113,25 +135,17 @@ impl AugmentationBuilder {
     pub fn build<B: Backend>(
         &self,
         config: &AugmentationConfig,
-        mean: Vec<f32>,
-        std: Vec<f32>,
         device: &B::Device,
     ) -> (Pipeline<Autodiff<B>>, Pipeline<B>) {
         let mut transforms_train: Vec<Box<dyn Augmentation<Autodiff<B>>>> = Vec::new();
         let mut transforms_val: Vec<Box<dyn Augmentation<B>>> = Vec::new();
 
         for transform in &config.transforms_train {
-            self.match_transform::<Autodiff<B>>(
-                transform,
-                &mut transforms_train,
-                &mean,
-                &std,
-                device,
-            );
+            self.match_transform::<Autodiff<B>>(transform, &mut transforms_train, device);
         }
 
         for transform in &config.transforms_val {
-            self.match_transform::<B>(transform, &mut transforms_val, &mean, &std, device);
+            self.match_transform::<B>(transform, &mut transforms_val, device);
         }
 
         (
