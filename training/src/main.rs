@@ -13,17 +13,7 @@ use lightmix::{
     },
     training::train,
 };
-use simplelog::{LevelFilter, WriteLogger};
 use tikv_jemallocator::Jemalloc;
-
-fn init_logger() {
-    WriteLogger::init(
-        LevelFilter::Info,
-        simplelog::Config::default(),
-        File::create("training.log").unwrap(),
-    )
-    .unwrap();
-}
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -115,8 +105,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
-
-    init_logger();
 
     let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");
     let localpath = config_dir.join("experiments.local.toml");
