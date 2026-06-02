@@ -1,12 +1,146 @@
 use core::{f32, f64};
 use std::marker::PhantomData;
 
-use burn::{Tensor, tensor::backend::Backend};
+use burn::{
+    Tensor,
+    tensor::{
+        backend::Backend,
+        grid::affine_grid_2d,
+        ops::{GridSampleOptions, GridSamplePaddingMode, InterpolateMode},
+    },
+};
 
-use burn_vision::Transform2D;
 use rand::RngExt;
 
 use crate::augmentations::Augmentation;
+
+// Transform2D source code taken from https://github.com/tracel-ai/burn/blob/a8ab5b3b3201ea87b2b6c1ad25a71adf1cb66f68/crates/burn-vision/src/transform/transform2d.rs
+// due to heavy dependencies of the whole burn-vision crate. TODO: make pull request to the original crate
+/// 2D point transformation
+///
+/// Useful for resampling: rotating, scaling, translating, etc image tensors
+pub struct Transform2D {
+    // 2x3 transformation matrix, to be used with column vectors:
+    // T(x) = Ax
+    transform: [[f32; 3]; 2],
+}
+
+impl Transform2D {
+    /// Transforms an image
+    ///
+    /// * `img` - Images tensor with shape (batch_size, channels, height, width)
+    ///
+    /// # Returns
+    ///
+    /// A tensor with the same as the input
+    pub fn transform<B: Backend>(self, img: Tensor<B, 4>) -> Tensor<B, 4> {
+        let [batch_size, channels, height, width] = img.shape().dims();
+        let transform = Tensor::<B, 2>::from(self.transform);
+        let transform = transform.reshape([1, 2, 3]).expand([batch_size, 2, 3]);
+        let grid = affine_grid_2d(transform, [batch_size, channels, height, width]);
+
+        let options = GridSampleOptions::new(InterpolateMode::Bilinear)
+            .with_padding_mode(GridSamplePaddingMode::Border)
+            .with_align_corners(true);
+        img.grid_sample_2d(grid, options)
+    }
+
+    /// Makes a 2d transformation composed of other transformations
+    pub fn composed<I: IntoIterator<Item = Self>>(transforms: I) -> Self {
+        let mut result = Self::identity();
+        for t in transforms.into_iter() {
+            result = result.mul(t);
+        }
+        result
+    }
+
+    /// Multiply two affine transforms represented as 2x3 matrices
+    fn mul(self, other: Transform2D) -> Transform2D {
+        let mut result = [[0.0f32; 3]; 2];
+
+        // Row 0
+        result[0][0] = self.transform[0][0] * other.transform[0][0]
+            + self.transform[0][1] * other.transform[1][0];
+        result[0][1] = self.transform[0][0] * other.transform[0][1]
+            + self.transform[0][1] * other.transform[1][1];
+        result[0][2] = self.transform[0][0] * other.transform[0][2]
+            + self.transform[0][1] * other.transform[1][2]
+            + self.transform[0][2];
+
+        // Row 1
+        result[1][0] = self.transform[1][0] * other.transform[0][0]
+            + self.transform[1][1] * other.transform[1][0];
+        result[1][1] = self.transform[1][0] * other.transform[0][1]
+            + self.transform[1][1] * other.transform[1][1];
+        result[1][2] = self.transform[1][0] * other.transform[0][2]
+            + self.transform[1][1] * other.transform[1][2]
+            + self.transform[1][2];
+
+        Transform2D { transform: result }
+    }
+
+    /// Makes an identity transform (x = Ax)
+    pub fn identity() -> Self {
+        Self {
+            transform: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        }
+    }
+
+    /// Makes a [`Transform2D`] for rotating a tensor
+    ///
+    /// * `theta` - In radians, the rotation
+    /// * `cx` - Center of rotation, x
+    /// * `cy` - Center of rotation, y
+    pub fn rotation(theta: f32, cx: f32, cy: f32) -> Self {
+        let cos_theta = theta.cos();
+        let sin_theta = theta.sin();
+
+        let transform = [
+            [cos_theta, -sin_theta, cx - cos_theta * cx + sin_theta * cy],
+            [sin_theta, cos_theta, cy - sin_theta * cx - cos_theta * cy],
+        ];
+
+        Self { transform }
+    }
+
+    /// Makes a [`Transform2D`] for scaling an image tensor
+    ///
+    /// * `sx` - Scale factor in the x direction
+    /// * `sy` - Scale factor in the y direction
+    /// * `cx` - Center of scaling, x
+    /// * `cy` - Center of scaling, y
+    pub fn scale(sx: f32, sy: f32, cx: f32, cy: f32) -> Self {
+        let transform = [[sx, 0.0, cx - sx * cx], [0.0, sy, cy - sy * cy]];
+
+        Self { transform }
+    }
+
+    /// Makes a [`Transform2D`] for translating an image tensor
+    ///
+    /// * `tx` - Translation in the x direction
+    /// * `ty` - Translation in the y direction
+    pub fn translation(tx: f32, ty: f32) -> Self {
+        let transform = [[1.0, 0.0, tx], [0.0, 1.0, ty]];
+
+        Self { transform }
+    }
+
+    /// Applies a general shear transformation around the image center,
+    /// combining both X and Y shear.
+    ///
+    /// # Arguments
+    /// * `shx` - Shear factor along the X-axis.
+    /// * `shy` - Shear factor along the Y-axis.
+    /// * `cx`, `cy` - Coordinates of the image center.
+    ///
+    /// # Returns
+    /// * `Self` with a combined shear transform matrix.
+    pub fn shear(shx: f32, shy: f32, cx: f32, cy: f32) -> Self {
+        let transform = [[1.0, shx, -shx * cy], [shy, 1.0, -shy * cx]];
+
+        Self { transform }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RandomAffine<B: Backend> {

@@ -12,44 +12,45 @@ burn = { version = "0.21.0", features = [
     "tui",
     "flex",
     "cpu",
+], default-features = false }
+burn-fusion = { version = "0.21.0", default-features = false, features = [
+    "std",
 ] }
-burn-fusion = "0.21.0"
 burn-cubecl-fusion = "0.21.0"
 burn-cuda = "0.21.0"
 polars = { version = "0.53.0", features = [
     "async",
+    "parquet",
     "lazy",
     "ipc",
     "new_streaming",
-    "parquet",
     "performant",
-] }
-toml = "1.1.2"
-walkdir = "2.5.0"
+], default-features = false }
+toml = { version = "1.1.2", default-features = false, features = ["parse"] }
 cubecl = { version = "0.10.0", features = ["cuda"] }
-nalgebra = { version = "0.35.0", features = ["std"] }
 image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
     "png",
-] }
+], optional = true }
 burn-cubecl = "0.21.0"
-indicatif = "0.18.4"
-tikv-jemallocator = "0.7.0"
-burn-vision = "0.21.0"
-rand = "0.10.1"
+tikv-jemallocator = { version = "0.7.0", optional = true }
+rand = { version = "0.10.1", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
-log = "0.4.30"
 rand_distr = "0.6.0"
 rerun = { version = "0.33.0", optional = true, default-features = false, features = [
     "sdk",
 ] }
 
 [features]
-viz-rerun = ["rerun"]
+default = []
+viz-rerun = ["dep:rerun"]
+decode = ["dep:image"]
+jemalloc = ["dep:tikv-jemallocator"]
 
 [dev-dependencies]
 tempfile = "3.27.0"
+indicatif = { version = "0.18.4", default-features = false }
 
 [[bench]]
 name = "embeddings"
