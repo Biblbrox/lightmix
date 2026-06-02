@@ -5,8 +5,6 @@ use burn::serde::{Deserialize, Serialize};
 use burn::tensor::Tensor;
 use burn::tensor::backend::Backend;
 
-// ── DCT matrix builders ───────────────────────────────────────────────────────
-
 /// Normalised DCT-II matrix [n, n].
 /// Row k is the k-th orthonormal DCT-II basis vector.
 fn dct_matrix(n: usize) -> Vec<f32> {

@@ -6,24 +6,14 @@ use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::ba
 use burn_cuda::Cuda;
 use lightmix::{
     config::{OptimizerConfig, ParsedConfig},
-    data::dataset::{DatasetType, LazyFiletype},
+    data::dataset::DatasetType,
     models::{
         efficientvit::EfficientViTConfig, fast_vit::FastViTConfig, fast_vit3d::FastViT3DConfig,
         vit::ViTConfig,
     },
     training::train,
 };
-use simplelog::{LevelFilter, WriteLogger};
 use tikv_jemallocator::Jemalloc;
-
-fn init_logger() {
-    WriteLogger::init(
-        LevelFilter::Info,
-        simplelog::Config::default(),
-        File::create("training.log").unwrap(),
-    )
-    .unwrap();
-}
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -62,10 +52,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
     match model_name.as_str() {
         name if name.starts_with("fast_vit_cloud") => {
             let model_cfg: FastViT3DConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -77,10 +64,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("fast_vit") => {
             let model_cfg: FastViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -92,10 +76,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("vit") => {
             let model_cfg: ViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -107,10 +88,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
         }
         name if name.starts_with("efficientvit") => {
             let model_cfg: EfficientViTConfig = model_table.try_into().unwrap();
-            let artifact_dir = format!("./experiments/{}-{}", model_cfg.model_name(), dataset_name);
             train::<B>(
-                &artifact_dir,
-                LazyFiletype::Arrow,
                 dataset_path.into(),
                 shared,
                 dataset_cfg,
@@ -127,8 +105,6 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
 fn main() {
     type MyBackend = Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
-
-    init_logger();
 
     let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");
     let localpath = config_dir.join("experiments.local.toml");

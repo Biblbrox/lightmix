@@ -7,6 +7,7 @@ pub trait CloudAugmentation<B: Backend>: Send + Sync {
     fn execute(&self, input: Tensor<B, 3>) -> Tensor<B, 3>;
 }
 
+#[derive(Default)]
 pub struct CloudPipeline<B: Backend> {
     transforms: Vec<Box<dyn CloudAugmentation<B>>>,
     ph: PhantomData<B>,
@@ -16,13 +17,6 @@ impl<B: Backend> CloudPipeline<B> {
     pub fn new(transforms: Vec<Box<dyn CloudAugmentation<B>>>) -> CloudPipeline<B> {
         CloudPipeline {
             transforms,
-            ph: PhantomData,
-        }
-    }
-
-    pub fn default() -> CloudPipeline<B> {
-        CloudPipeline {
-            transforms: vec![],
             ph: PhantomData,
         }
     }
