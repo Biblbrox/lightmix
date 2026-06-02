@@ -13,14 +13,11 @@ burn = { version = "0.21.0", features = [
     "flex",
     "cpu",
 ] }
-simplelog = "0.12.2"
 burn-fusion = "0.21.0"
 burn-cubecl-fusion = "0.21.0"
 burn-cuda = "0.21.0"
 polars = { version = "0.53.0", features = [
     "async",
-    "dtype-struct",
-    "dtype-array",
     "lazy",
     "ipc",
     "new_streaming",
@@ -31,7 +28,10 @@ toml = "1.1.2"
 walkdir = "2.5.0"
 cubecl = { version = "0.10.0", features = ["cuda"] }
 nalgebra = { version = "0.35.0", features = ["std"] }
-image = "0.25.10"
+image = { version = "0.25.10", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 burn-cubecl = "0.21.0"
 indicatif = "0.18.4"
 tikv-jemallocator = "0.7.0"
