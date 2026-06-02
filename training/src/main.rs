@@ -1,6 +1,6 @@
 #![recursion_limit = "2048"]
 
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
 use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::backend::Backend};
 use burn_cuda::Cuda;
@@ -13,8 +13,11 @@ use lightmix::{
     },
     training::train,
 };
+
+#[cfg(feature = "jemalloc")]
 use tikv_jemallocator::Jemalloc;
 
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
