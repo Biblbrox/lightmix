@@ -47,6 +47,7 @@ default = []
 viz-rerun = ["dep:rerun"]
 decode = ["dep:image"]
 jemalloc = ["dep:tikv-jemallocator"]
+in_memory_loader = []
 
 [dev-dependencies]
 tempfile = "3.27.0"
