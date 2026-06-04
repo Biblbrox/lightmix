@@ -35,20 +35,25 @@ def make_image_decoder(size, crop, channels) -> Callable[[bytes], bytes]:
         raw_bytes = img.tobytes()
         expected = img.width * img.height * len(img.getbands())
         if len(raw_bytes) != expected:
-            raise ValueError(f"Corrupted image: got {len(raw_bytes)}, expected {expected}")
+            raise ValueError(
+                f"Corrupted image: got {len(raw_bytes)}, expected {expected}"
+            )
         return raw_bytes
 
     return decode
 
 
-def make_pointcloud_decoder(num_points: int, num_channels: int) -> tuple[Callable, Callable]:
+def make_pointcloud_decoder(
+    num_points: int, num_channels: int
+) -> tuple[Callable, Callable]:
     bytes_per_point = num_channels * 4
 
     def decode_from_bytes(raw: bytes) -> bytes:
         total_points = len(raw) // bytes_per_point
         all_floats = struct.unpack(f"{total_points * num_channels}f", raw)
         points = [
-            all_floats[i * num_channels : (i + 1) * num_channels] for i in range(total_points)
+            all_floats[i * num_channels : (i + 1) * num_channels]
+            for i in range(total_points)
         ]
         return _sample_and_pack(points, num_points, num_channels)
 
@@ -58,7 +63,7 @@ def make_pointcloud_decoder(num_points: int, num_channels: int) -> tuple[Callabl
     return decode_from_bytes, decode_from_list
 
 
-# Each spec now carries:
+# Each spec carries:
 #   decode_fn  – called on the raw column bytes; returns bytes
 #   unnest     – True when the parquet column is a {bytes, path} struct
 DATASET_SPECS = {
@@ -141,7 +146,9 @@ def write_arrow(parquet_path: Path, out_path: Path, dataset: str):
 
     return_dtype = pl.Binary
 
-    df = df.with_columns(pl.col("image").map_elements(decode_fn, return_dtype=return_dtype))
+    df = df.with_columns(
+        pl.col("image").map_elements(decode_fn, return_dtype=return_dtype)
+    )
 
     df.with_columns(pl.col(["image", spec["labelcol"]]).shuffle(seed=42)).sink_ipc(
         arrow_path, record_batch_size=batch_size
@@ -170,7 +177,18 @@ def convert(in_path: Path, out_path: Path, dataset):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Dataset converter tool")
-    parser.add_argument("-i", dest="i", help="Path to parquet dataset", type=str, required=True)
+    parser.add_argument(
+        "-i", dest="i", help="Path to parquet dataset", type=str, required=True
+    )
+    parser.add_argument(
+        "-it",
+        dest="it",
+        help="Input type of the input dataset",
+        type=str,
+        required=False,
+        choices=["parquet", "coco"],
+        default="parquet",
+    )
     parser.add_argument(
         "-o", dest="o", help="Path to output arrow dataset", type=str, required=True
     )

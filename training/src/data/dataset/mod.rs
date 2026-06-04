@@ -1,5 +1,6 @@
 pub mod cifar10;
 pub mod cifar100;
+pub mod coco;
 pub mod fashionmnist;
 pub mod food101;
 pub mod imagenet1k;

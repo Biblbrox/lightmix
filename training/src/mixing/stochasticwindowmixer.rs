@@ -31,6 +31,13 @@ pub struct StochasticWindowMixer<B: Backend> {
 }
 
 impl<B: Backend> StochasticWindowMixer<B> {
+    pub fn pad(&self, k: Tensor<B, 4>, v: Tensor<B, 4>) -> (Tensor<B, 4>, Tensor<B, 4>) {
+        let w = self.half_width;
+        let k_pad = k.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
+        let v_pad = v.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
+        (k_pad, v_pad)
+    }
+
     pub fn forward_hard(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [b, n, e] = x.dims();
 
@@ -55,8 +62,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let k = qk_out.slice_dim(3, s![dk..2 * dk]);
         let v = self.proj_v.forward(x); // [B, N, H, d]
 
-        let k_pad = k.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
-        let v_pad = v.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
+        let (k_pad, v_pad) = self.pad(k, v);
 
         let k_win: Tensor<B, 5> = k_pad.unfold(1, bw, 1); // [B,N,H,dk,bw]
 
@@ -88,16 +94,14 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let k = x_k.matmul(w_k); // [B, H, N, d]
         let v = self.proj_v.forward(x); // [B, H, N, d]
 
-        let k_pad = k.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
-        let v_pad = v.pad([(0, 0), (w, w), (0, 0), (0, 0)], PadMode::Constant(0.0));
+        let (k_pad, v_pad) = self.pad(k, v);
 
         let k_win: Tensor<B, 5> = k_pad.unfold(1, bw, 1); // [B,H,N,dk,bw]
-        let v_win: Tensor<B, 5> = v_pad.unfold(1, bw, 1); // [B,H,N,dk,bw]
-
         let scores = q.matmul(k_win).squeeze_dim(3) * self.inv_scale + self.band_bias.val();
 
         let p = softmax(scores, 3);
 
+        let v_win: Tensor<B, 5> = v_pad.unfold(1, bw, 1); // [B,H,N,dk,bw]
         let out = v_win.matmul(p.unsqueeze_dim(4));
 
         out.reshape([b, n, e])

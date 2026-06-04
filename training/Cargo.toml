@@ -11,19 +11,13 @@ burn = { version = "0.21.0", features = [
     "train",
     "tui",
     "flex",
-    "cpu",
 ], default-features = false }
-burn-fusion = { version = "0.21.0", default-features = false, features = [
-    "std",
-] }
-burn-cubecl-fusion = "0.21.0"
-burn-cuda = "0.21.0"
-polars = { version = "0.53.0", features = [
+polars = { version = "0.54.3", features = [
     "async",
     "parquet",
     "lazy",
     "ipc",
-    "new_streaming",
+    "ipc_streaming",
     "performant",
 ], default-features = false }
 toml = { version = "1.1.2", default-features = false, features = ["parse"] }
@@ -32,7 +26,6 @@ image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
     "png",
 ], optional = true }
-burn-cubecl = "0.21.0"
 tikv-jemallocator = { version = "0.7.0", optional = true }
 rand = { version = "0.10.1", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }

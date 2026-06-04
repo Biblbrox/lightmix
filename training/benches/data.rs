@@ -1,13 +1,12 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use cubecl::cpu::CpuDevice;
 use indicatif::ProgressBar;
 use lightmix::augmentations::colors::ColorJitter;
 use lightmix::augmentations::normalize::Normalize;
 use lightmix::augmentations::rotation::RandomAffine;
 use lightmix::augmentations::{Augmentation, Pipeline};
-use lightmix::benchmarks::CpuBackend;
+use lightmix::benchmarks::{CpuBackend, CpuDevice};
 use lightmix::data::batch::cifar100::Cifar100Batcher;
 use lightmix::data::batch::imagenet1k::ImageNet1kBatcher;
 use lightmix::data::builder::StreamingDataLoaderBuilder;
@@ -34,7 +33,7 @@ fn test_imagenet1k() {
     let batch_size = 128;
 
     type B = CpuBackend;
-    let device = CpuDevice;
+    let device = CpuDevice::default();
 
     let ds = ImageNet1kDataset {};
 
@@ -73,7 +72,7 @@ fn test_cifar100() {
     let batch_size = 128;
 
     type B = CpuBackend;
-    let device = CpuDevice;
+    let device = CpuDevice::default();
 
     let ds = Cifar100Dataset {};
     let batcher = Cifar100Batcher::new();

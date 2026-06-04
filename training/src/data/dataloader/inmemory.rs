@@ -46,6 +46,7 @@ impl<B: Backend> InMemoryDataLoader<B> {
             .select([len()])
             .collect_with_engine(Engine::Streaming)
             .unwrap()
+            .unwrap_single()
             .column("len")
             .unwrap()
             .u32()

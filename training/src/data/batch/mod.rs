@@ -89,7 +89,8 @@ pub trait Batcher<B: Backend>: Send + Sync {
             .unwrap()
             .binary()
             .unwrap()
-            .into_no_null_iter()
+            .iter()
+            .flatten()
             .for_each(|chunk| imagebuf.extend_from_slice(chunk));
 
         let imagedata = TensorData::from_bytes_vec(

@@ -38,7 +38,8 @@ impl<B: Backend> Batcher<B> for ModelNet40Batcher {
             .unwrap()
             .binary()
             .unwrap()
-            .into_no_null_iter()
+            .iter()
+            .flatten()
             .for_each(|chunk| pointbuf.extend_from_slice(chunk));
 
         let pointdata = TensorData::from_bytes_vec(
