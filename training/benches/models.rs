@@ -4,19 +4,16 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use lightmix::{
-    benchmarks::utils::generate_run_id,
-    models::{
-        efficientvit::{EfficientViT, EfficientViTConfig},
-        fast_vit::{FastViT, FastViTConfig},
-        vit::{ViT, ViTConfig},
-    },
+use lightmix::models::{
+    efficientvit::{EfficientViT, EfficientViTConfig},
+    fast_vit::{FastViT, FastViTConfig},
+    vit::{ViT, ViTConfig},
 };
 
 use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
 
-use lightmix::benchmarks::GpuBackend;
-use lightmix::benchmarks::utils::print_bench_results;
+use crate::common::{GpuBackend, generate_run_id, print_bench_results};
+mod common;
 
 pub struct FastViTBenchmark<B: Backend> {
     pub num_patches: usize,

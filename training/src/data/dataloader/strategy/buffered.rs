@@ -7,7 +7,6 @@ use std::{
 };
 
 use polars::prelude::*;
-use rand::RngExt;
 
 use crate::data::{dataloader::strategy::FrameBatchStrategy, mapper::FrameMapper};
 
@@ -73,12 +72,11 @@ impl FrameBatchStrategy for BufferedBatchStrategy {
                 let mapper = mapper.clone();
 
                 thread::spawn(move || {
-                    let mut rng = rand::rng();
                     loop {
                         let mut stream = source.as_ref().lock().unwrap();
                         let maybe_batch = stream.next().transpose().unwrap();
                         drop(stream);
-                        let seed: u64 = rng.random();
+                        let seed: u64 = fastrand::u64(0..u64::MAX);
 
                         match maybe_batch {
                             Some(mut batch) => {

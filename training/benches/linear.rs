@@ -5,7 +5,9 @@ use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
 
 use burn::nn::{Linear, LinearConfig};
 use lightmix::linear::monarch::{MonarchLinear, MonarchLinearConfig};
-use lightmix::benchmarks::{CpuBackend, GpuBackend, utils::print_bench_results};
+
+use crate::common::{CpuBackend, GpuBackend, generate_run_id, print_bench_results};
+mod common;
 
 // ── MonarchLinear benchmark ──────────────────────────────────────────────────
 pub struct MonarchLinearBenchmark<B: Backend> {
@@ -120,13 +122,17 @@ fn monarch_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
     }
 
     print_bench_results(
-        run_id, "linear", backend,
+        run_id,
+        "linear",
+        backend,
         &format!("MonarchLinear ({})", backend),
         "embed_dim",
         &results_monarch,
     );
     print_bench_results(
-        run_id, "linear", backend,
+        run_id,
+        "linear",
+        backend,
         &format!("Linear baseline ({})", backend),
         "embed_dim",
         &results_linear,
@@ -134,8 +140,6 @@ fn monarch_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
 }
 
 fn main() {
-    use lightmix::benchmarks::utils::generate_run_id;
-
     println!("=== MonarchLinear vs Linear Benchmarks ===");
     let run_id = generate_run_id();
     monarch_benchmark_backend::<GpuBackend>(&run_id, "GPU");

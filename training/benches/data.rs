@@ -6,7 +6,6 @@ use lightmix::augmentations::colors::ColorJitter;
 use lightmix::augmentations::normalize::Normalize;
 use lightmix::augmentations::rotation::RandomAffine;
 use lightmix::augmentations::{Augmentation, Pipeline};
-use lightmix::benchmarks::{CpuBackend, CpuDevice};
 use lightmix::data::batch::cifar100::Cifar100Batcher;
 use lightmix::data::batch::imagenet1k::ImageNet1kBatcher;
 use lightmix::data::builder::StreamingDataLoaderBuilder;
@@ -15,6 +14,10 @@ use lightmix::data::dataset::cifar100::Cifar100Dataset;
 use lightmix::data::dataset::imagenet1k::ImageNet1kDataset;
 use lightmix::data::dataset::{LazyDataset, LazyFiletype};
 use polars::prelude::PlRefPath;
+
+use crate::common::{CpuBackend, CpuDevice};
+
+mod common;
 
 fn main() {
     println!("=== ImageNet1k Dataset Benchmark ===");

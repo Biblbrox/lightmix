@@ -94,10 +94,7 @@ impl ViTConfig {
     pub fn model_name(&self) -> String {
         format!(
             "vit-head{}-hid{}-emb{}-enc{}",
-            self.num_heads,
-            self.hidden_dim,
-            self.embed_dim,
-            self.num_encoders
+            self.num_heads, self.hidden_dim, self.embed_dim, self.num_encoders
         )
     }
 }

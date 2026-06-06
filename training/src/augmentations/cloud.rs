@@ -1,7 +1,6 @@
 use core::marker::PhantomData;
 
 use burn::{prelude::*, tensor::backend::Backend};
-use rand::RngExt;
 
 pub trait CloudAugmentation<B: Backend>: Send + Sync {
     fn execute(&self, input: Tensor<B, 3>) -> Tensor<B, 3>;
@@ -85,8 +84,7 @@ impl<B: Backend> CloudRotation<B> {
 
 impl<B: Backend> CloudAugmentation<B> for CloudRotation<B> {
     fn execute(&self, input: Tensor<B, 3>) -> Tensor<B, 3> {
-        let mut rng = rand::rng();
-        if rng.random_bool(self.p) {
+        if fastrand::Rng::new().f64() < self.p {
             let angle = self.degrees.to_radians();
             let cos_val = f32::cos(angle);
             let sin_val = f32::sin(angle);

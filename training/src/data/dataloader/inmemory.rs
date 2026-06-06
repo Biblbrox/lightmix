@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::{
     sync::{
         Arc,
@@ -10,7 +11,6 @@ use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},
     tensor::backend::Backend,
 };
-use cubecl::stub::Mutex;
 use polars::lazy::{
     dsl::{Engine, len},
     frame::LazyFrame,

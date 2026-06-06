@@ -5,15 +5,17 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use lightmix::{
-    benchmarks::{CpuBackend, GpuAutodiffBackend},
-    mixing::{
-        learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
-        staticmixer::{PermutationStrategy, StaticMixer, StaticMixerConfig},
-        stochasticmixer::{StochasticMixer, StochasticMixerConfig},
-        stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
-    },
+use lightmix::mixing::{
+    learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
+    staticmixer::{PermutationStrategy, StaticMixer, StaticMixerConfig},
+    stochasticmixer::{StochasticMixer, StochasticMixerConfig},
+    stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
 };
+
+use crate::common::{
+    CpuBackend, GpuAutodiffBackend, GpuBackend, generate_run_id, print_bench_results,
+};
+mod common;
 
 impl<B: Backend> Benchmark for SelfAttentionBenchmark<B> {
     type Input = (Tensor<B, 3>, MultiHeadAttention<B>);
@@ -287,8 +289,6 @@ impl<B: Backend> Benchmark for StaticPermuterBenchmark<B> {
 }
 
 fn main() {
-    use lightmix::benchmarks::{GpuBackend, utils::generate_run_id};
-
     println!("=== Mixing Benchmarks ===");
     let run_id = generate_run_id();
     mixing_benchmark_backend::<GpuBackend>(&run_id, "Gpu");
@@ -299,7 +299,6 @@ fn main() {
 fn mixing_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
     use cubecl::benchmark::BenchmarkComputations;
     use cubecl::profile::TimingMethod;
-    use lightmix::benchmarks::utils::print_bench_results;
 
     let device = B::Device::default();
 
@@ -429,50 +428,66 @@ fn mixing_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
     }
 
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("SelfAttention/ViT ({})", backend),
         "num_heads",
         &results_attn,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StaticPermut ({})", backend),
         "num_heads",
         &results_static,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("LearnedPermut ({})", backend),
         "num_heads",
         &results_learned,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StochasticPermut Soft ({})", backend),
         "num_heads",
         &results_stochastic_soft,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StocasticPermut Hard ({})", backend),
         "num_heads",
         &results_stochastic_hard,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StochasticPermut Inference ({})", backend),
         "num_heads",
         &results_stochastic_inference,
     );
 
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StochasticWinPermut Soft ({})", backend),
         "num_heads",
         &results_stochastic_win_soft,
     );
     print_bench_results(
-        run_id, "mixing", backend,
+        run_id,
+        "mixing",
+        backend,
         &format!("StocasticWinPermut Hard ({})", backend),
         "num_heads",
         &results_stochastic_win_hard,

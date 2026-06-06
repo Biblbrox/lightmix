@@ -10,8 +10,6 @@ use burn::{
     },
 };
 
-use rand::RngExt;
-
 use crate::augmentations::Augmentation;
 
 // Transform2D source code taken from https://github.com/tracel-ai/burn/blob/a8ab5b3b3201ea87b2b6c1ad25a71adf1cb66f68/crates/burn-vision/src/transform/transform2d.rs
@@ -161,8 +159,7 @@ impl<B: Backend> RandomAffine<B> {
 
 impl<B: Backend> Augmentation<B> for RandomAffine<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut rng = rand::rng();
-        if rng.random_bool(self.p) {
+        if fastrand::Rng::new().f64() < self.p {
             let [_, _, h, w] = input.dims();
             let cx = (w as f32 - 1.0) * 0.5;
             let cy = (h as f32 - 1.0) * 0.5;
@@ -200,8 +197,7 @@ impl<B: Backend> RandomFlip<B> {
 
 impl<B: Backend> Augmentation<B> for RandomFlip<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut rng = rand::rng();
-        if rng.random_bool(self.p) {
+        if fastrand::Rng::new().f64() < self.p {
             return match self.orientation {
                 Orientation::Vertical => input.flip([2]),
                 Orientation::Horizontal => input.flip([3]),

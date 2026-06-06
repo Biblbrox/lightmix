@@ -5,12 +5,12 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use lightmix::{
-    benchmarks::{CpuBackend, GpuBackend, utils::print_bench_results},
-    encoders::fast_encoder::{FastEncoder, FastEncoderConfig},
-};
+use lightmix::encoders::fast_encoder::{FastEncoder, FastEncoderConfig};
 
 use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
+
+use crate::common::{CpuBackend, GpuBackend, generate_run_id, print_bench_results};
+mod common;
 
 pub struct FastEncoderBenchmark<B: Backend> {
     pub num_patches: usize,
@@ -181,13 +181,17 @@ fn encoders_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
     }
 
     print_bench_results(
-        run_id, "encoders", backend,
+        run_id,
+        "encoders",
+        backend,
         &format!("FastEncoder ({})", backend),
         "num_heads",
         &results_fast,
     );
     print_bench_results(
-        run_id, "encoders", backend,
+        run_id,
+        "encoders",
+        backend,
         &format!("ViTEncoder ({})", backend),
         "num_heads",
         &results_vit,
@@ -195,8 +199,6 @@ fn encoders_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
 }
 
 fn main() {
-    use lightmix::benchmarks::utils::generate_run_id;
-
     let run_id = generate_run_id();
     encoders_benchmark_backend::<GpuBackend>(&run_id, "GPU");
     encoders_benchmark_backend::<CpuBackend>(&run_id, "CPU");

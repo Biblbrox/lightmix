@@ -17,20 +17,17 @@ polars = { version = "0.54.3", features = [
     "parquet",
     "lazy",
     "ipc",
-    "ipc_streaming",
     "performant",
 ], default-features = false }
 toml = { version = "1.1.2", default-features = false, features = ["parse"] }
-cubecl = { version = "0.10.0", features = ["cuda"] }
 image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
     "png",
 ], optional = true }
 tikv-jemallocator = { version = "0.7.0", optional = true }
-rand = { version = "0.10.1", default-features = false }
+fastrand = "2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
-rand_distr = "0.6.0"
 rerun = { version = "0.33.0", optional = true, default-features = false, features = [
     "sdk",
 ] }
@@ -45,6 +42,7 @@ in_memory_loader = []
 [dev-dependencies]
 tempfile = "3.27.0"
 indicatif = { version = "0.18.4", default-features = false }
+cubecl = { version = "0.10.0", features = ["cuda"] }
 
 [[bench]]
 name = "embeddings"

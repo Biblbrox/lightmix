@@ -5,8 +5,6 @@ use burn::{
     tensor::{Shape, TensorPrimitive, backend::Backend, ops::ConvOptions},
 };
 
-use rand::RngExt;
-
 use crate::augmentations::Augmentation;
 
 pub struct ColorJitter<B: Backend> {
@@ -43,10 +41,12 @@ impl<B: Backend> Augmentation<B> for ColorJitter<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
         let shape = input.shape();
 
-        let mut rng = rand::rng();
-        let br = [1.0 + rng.random_range(-self.brightness..=self.brightness); 1];
-        let ctr = [1.0 + rng.random_range(-self.contrast..=self.contrast); 1];
-        let st = [1.0 + rng.random_range(-self.saturation..=self.saturation); 1];
+        let mut rng = fastrand::Rng::new();
+        let br =
+            [1.0 + (2.0 * self.brightness as f64 * rng.f64() - self.brightness as f64) as f32; 1];
+        let ctr = [1.0 + (2.0 * self.contrast as f64 * rng.f64() - self.contrast as f64) as f32; 1];
+        let st =
+            [1.0 + (2.0 * self.saturation as f64 * rng.f64() - self.saturation as f64) as f32; 1];
 
         let brightness = Tensor::<B, 1>::from_floats(br, &input.device()).reshape([1, 1, 1, 1]);
         let contrast = Tensor::<B, 1>::from_floats(ctr, &input.device()).reshape([1, 1, 1, 1]);
@@ -95,8 +95,7 @@ impl<B: Backend> Augmentation<B> for RandomGrayscale<B> {
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
         let shape = input.shape();
 
-        let mut rng = rand::rng();
-        if rng.random_bool(self.p) {
+        if fastrand::Rng::new().f64() < self.p {
             let r = input
                 .clone()
                 .slice([0..shape[0], 0..1, 0..shape[2], 0..shape[3]]);
@@ -172,8 +171,7 @@ impl<B: Backend> Default for RandomErasing<B> {
 impl<B: Backend> Augmentation<B> for RandomErasing<B> {
     // input: [B, C, H, W]
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut rng = rand::rng();
-        if rng.random::<f64>() > self.p {
+        if fastrand::f64() > self.p as f64 {
             return input;
         }
 
@@ -188,8 +186,8 @@ impl<B: Backend> Augmentation<B> for RandomErasing<B> {
 
         // Find a valid erase rectangle
         let region = (0..self.max_attempts).find_map(|_| {
-            let scale = rng.random_range(self.min_scale..self.max_scale);
-            let ratio = rng.random_range(self.min_ratio..self.max_ratio);
+            let scale = (self.max_scale - self.min_scale) * fastrand::f64() + self.min_scale;
+            let ratio = (self.max_ratio - self.min_ratio) * fastrand::f64() + self.min_ratio;
             let erase_area = area * scale;
 
             let eh = ((erase_area / ratio).sqrt() as usize).min(h);
@@ -198,8 +196,8 @@ impl<B: Backend> Augmentation<B> for RandomErasing<B> {
             if eh == 0 || ew == 0 || eh >= h || ew >= w {
                 return None;
             }
-            let top = rng.random_range(0..h - eh);
-            let left = rng.random_range(0..w - ew);
+            let top = fastrand::usize(0..h - eh);
+            let left = fastrand::usize(0..w - ew);
             Some((top, left, eh, ew))
         });
 
@@ -296,12 +294,11 @@ impl<B: Backend> GaussianBlur<B> {
 impl<B: Backend> Augmentation<B> for GaussianBlur<B> {
     // input: [B, C, H, W]
     fn execute(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut rng = rand::rng();
-        if rng.random::<f64>() > self.p {
+        if fastrand::f64() > self.p as f64 {
             return input;
         }
 
-        let sigma = rng.random_range(self.min_sigma..self.max_sigma);
+        let sigma = (self.max_sigma - self.min_sigma) * fastrand::f64() + self.min_sigma;
         let c = input.dims()[1];
 
         let kernel = self.make_kernel(c, sigma); // [C, 1, k, k]
