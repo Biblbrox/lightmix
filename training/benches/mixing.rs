@@ -190,7 +190,7 @@ impl<B: Backend> Benchmark for StochasticWinMixerBenchmark<B> {
     fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
         let (tensor, mixer) = input;
         Ok(match self.mode {
-            StochasticMixerMode::Soft => mixer.forward(tensor),
+            StochasticMixerMode::Soft => mixer.forward_soft(tensor),
             StochasticMixerMode::Hard => mixer.forward_hard(tensor),
             _ => todo!("Not umplemented"),
         })

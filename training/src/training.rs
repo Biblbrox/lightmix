@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::Write,
+    panic,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -76,6 +77,22 @@ pub fn train<B: Backend>(
         "./experiments/{}-{}",
         shared.active_model, shared.active_dataset
     );
+
+    let artifact_dir_clone = artifact_dir.clone();
+    panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::capture();
+
+        let msg = format!("=== PANIC ===\n{info}\n\n=== BACKTRACE ===\n{backtrace}\n",);
+
+        // Write to file — guaranteed to work regardless of TUI state
+        let path = format!("{artifact_dir_clone}/panic.log");
+        if let Ok(mut f) = File::create(&path) {
+            let _ = f.write_all(msg.as_bytes());
+        }
+
+        // Also try stderr directly — may be garbled by TUI but worth trying
+        eprintln!("{msg}");
+    }));
 
     // Remove existing artifacts before to get an accurate learner summary
     if !shared.continue_training {
