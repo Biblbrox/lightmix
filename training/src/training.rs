@@ -84,13 +84,11 @@ pub fn train<B: Backend>(
 
         let msg = format!("=== PANIC ===\n{info}\n\n=== BACKTRACE ===\n{backtrace}\n",);
 
-        // Write to file — guaranteed to work regardless of TUI state
         let path = format!("{artifact_dir_clone}/panic.log");
         if let Ok(mut f) = File::create(&path) {
             let _ = f.write_all(msg.as_bytes());
         }
 
-        // Also try stderr directly — may be garbled by TUI but worth trying
         eprintln!("{msg}");
     }));
 
