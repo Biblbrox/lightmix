@@ -53,7 +53,6 @@ pub struct StochasticWindowMixer<B: Backend> {
     temperature: f32,
     half_width: usize,
     num_heads: usize,
-    tok_idx: Tensor<B, 4, Int>,
     dk: usize,
     window_indices: Tensor<B, 1, Int>, // [N * bw]
     win_idx_4d: Tensor<B, 4, Int>,
@@ -120,7 +119,6 @@ impl<B: Backend> StochasticWindowMixer<B> {
             .gather(3, best_i) // [B, N, H, 1]
             .expand([b, n, h, dk]);
 
-        // gather directly from unpadded v — no pad, no tok_idx
         v.gather(1, abs_pos).reshape([b, n, e])
     }
 
@@ -182,9 +180,6 @@ impl StochasticWindowMixerConfig {
                 device,
             ))
             .set_require_grad(true),
-            tok_idx: Tensor::<B, 1, Int>::arange(0..self.seq_length as i64, device)
-                .reshape([1, self.seq_length, 1, 1])
-                .expand([1, self.seq_length, self.num_heads, dk]),
             proj_v: LinearConfig::new(dk, dk).init(device),
             dk,
             inv_scale: 1.0 / ((dk as f32).sqrt() * self.temperature),
