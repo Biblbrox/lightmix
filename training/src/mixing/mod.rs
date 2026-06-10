@@ -10,6 +10,7 @@ pub mod stochasticmixer;
 pub mod stochasticwindowmixer;
 
 pub fn sinkhorn<B: Backend>(s: Tensor<B, 4>, temp: f32) -> Tensor<B, 4> {
-    let s = softmax(s / temp, 3); // rows
-    softmax(s.transpose(), 3).transpose() // cols
+    let s = s / temp;
+    let s = softmax(s, 3); // row normalisation (along last dim)
+    softmax(s, 2)
 }
