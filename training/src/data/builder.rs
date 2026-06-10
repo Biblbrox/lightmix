@@ -8,13 +8,15 @@ use crate::{
     data::{
         batch::{Batch, Batcher},
         dataloader::{
-            inmemory::InMemoryDataLoader,
             strategy::{FrameBatchStrategy, fixed::FixedBatchStrategy},
             stream::StreamingDataLoader,
         },
         mapper::LazyMapper,
     },
 };
+
+#[cfg(feature = "in_memory_loader")]
+use crate::data::dataloader::inmemory::InMemoryDataLoader;
 
 pub struct StreamingDataLoaderBuilder<B: Backend> {
     batcher: Arc<dyn Batcher<B>>,
@@ -68,6 +70,7 @@ impl<B: Backend> StreamingDataLoaderBuilder<B> {
     }
 }
 
+#[cfg(feature = "in_memory_loader")]
 pub struct InMemoryDataLoaderBuilder<B: Backend> {
     batcher: Arc<dyn Batcher<B>>,
     transforms: Option<Arc<Pipeline<B>>>,
@@ -76,6 +79,7 @@ pub struct InMemoryDataLoaderBuilder<B: Backend> {
     device: Option<B::Device>,
 }
 
+#[cfg(feature = "in_memory_loader")]
 impl<B: Backend> InMemoryDataLoaderBuilder<B> {
     pub fn new(batcher: Arc<dyn Batcher<B>>) -> Self {
         Self {

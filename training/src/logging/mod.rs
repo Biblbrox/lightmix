@@ -48,10 +48,7 @@ pub fn log_3d_sample<B: Backend>(
     iteration: i64,
     rec: &rerun::RecordingStream,
 ) {
-    use rand::{RngExt, rng};
     use rerun::Points3D;
-
-    let mut rng = rng();
 
     rec.set_time_sequence("epoch", epoch as i64);
     rec.set_time_sequence("batch", iteration);
@@ -64,7 +61,7 @@ pub fn log_3d_sample<B: Backend>(
     let output = output.output.clone();
     let logits_shape: [usize; 1] = output.shape().dims();
     let batch_size = logits_shape[0];
-    let sample_idx = rng.random_range(0..batch_size);
+    let sample_idx = fastrand::Rng::new().usize(0..batch_size);
     let output = output.slice_dim(0, sample_idx..sample_idx + 1);
 
     // Convert tensor to bytes and reinterpret as f32

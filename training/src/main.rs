@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 
 use burn::{grad_clipping::GradientClippingConfig, optim::AdamWConfig, tensor::backend::Backend};
-use burn_cuda::Cuda;
 use lightmix::{
     config::{OptimizerConfig, ParsedConfig},
     data::dataset::DatasetType,
@@ -106,7 +105,7 @@ fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
 }
 
 fn main() {
-    type MyBackend = Cuda<f32, i32>;
+    type MyBackend = burn::backend::cuda::Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
 
     let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");

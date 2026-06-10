@@ -4,7 +4,9 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
+use crate::common::{GpuBackend, GpuDevice, generate_run_id, print_bench_results};
 use lightmix::embeddings::vit::{PatchEmbedding, PatchEmbeddingConfig};
+mod common;
 
 pub struct PatchEmbeddingBenchmark<B: Backend> {
     pub batch_size: usize,
@@ -70,8 +72,6 @@ fn main() {
         profile::TimingMethod,
     };
 
-    use lightmix::benchmarks::{GpuBackend, GpuDevice, utils::{print_bench_results, generate_run_id}};
-
     let device = GpuDevice::default();
     let run_id = generate_run_id();
 
@@ -100,7 +100,9 @@ fn main() {
     }
 
     print_bench_results(
-        &run_id, "embeddings", "GPU",
+        &run_id,
+        "embeddings",
+        "GPU",
         "Patcher",
         "embed_dim",
         &results,

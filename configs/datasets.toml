@@ -71,8 +71,8 @@ std = [0.229, 0.224, 0.225]
 [tinyimagenet]
 augmentation_pipeline = "image"
 transforms = ["normalize", "random_flip"]
-batch_size = 32
-val_batch_size = 64
+batch_size = 64
+val_batch_size = 128
 epochs = 100
 num_classes = 200
 img_size = 64

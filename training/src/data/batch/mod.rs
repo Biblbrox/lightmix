@@ -12,7 +12,7 @@ use std::sync::Arc;
 use burn::tensor::{DType, Int, TensorData};
 use burn::{prelude::Tensor, tensor::backend::Backend};
 use polars::prelude::*;
-use rand::{SeedableRng, seq::SliceRandom};
+
 
 use crate::augmentations::Pipeline;
 
@@ -29,8 +29,11 @@ impl<B: Backend> Batch<B> {
         let b = self.targets.dims()[0];
         let device = self.targets.device();
         let mut indices: Vec<i32> = (0..b as i32).collect();
-        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        indices.shuffle(&mut rng);
+        let mut rng = fastrand::Rng::with_seed(seed);
+        for i in (1..b as i32).rev() {
+            let j = rng.usize(0..=(i as usize));
+            indices.swap(i as usize, j as usize);
+        }
         let idx = Tensor::<B, 1, Int>::from_ints(indices.as_slice(), &device);
         Self {
             data: self.data.clone().select(0, idx.clone()),
@@ -89,7 +92,8 @@ pub trait Batcher<B: Backend>: Send + Sync {
             .unwrap()
             .binary()
             .unwrap()
-            .into_no_null_iter()
+            .iter()
+            .flatten()
             .for_each(|chunk| imagebuf.extend_from_slice(chunk));
 
         let imagedata = TensorData::from_bytes_vec(

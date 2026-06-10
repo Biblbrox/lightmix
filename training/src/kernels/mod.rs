@@ -4,7 +4,7 @@ use burn::{Tensor, tensor::backend::Backend};
 //pub mod backward;
 // CubeCL API is very unstble.. Uff..
 //pub mod launch;
-pub mod monarch;
+//pub mod monarch;
 
 pub fn monarch_fused_reference<B: Backend>(
     x: Tensor<B, 3>,

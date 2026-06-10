@@ -62,7 +62,6 @@ mod tests {
         backend::{Flex, flex::FlexDevice},
         tensor::{Shape, TensorData, Tolerance},
     };
-    use burn_cuda::{Cuda, CudaDevice};
 
     use crate::augmentations::{
         Augmentation, Pipeline, colors::ColorJitter, normalize::Normalize, rotation::RandomAffine,
@@ -133,8 +132,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_prepend() {
-        type B = Cuda;
-        let device = CudaDevice::default();
+        let device = Device::default();
 
         let normalize1 = Box::new(Normalize::<B>::new(
             vec![1.0, 1.0, 1.0],

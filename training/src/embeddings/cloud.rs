@@ -1,3 +1,5 @@
+//! [TODO:description]
+
 use burn::{
     module::{Module, Param},
     nn::{Dropout, DropoutConfig, Linear, LinearConfig},
@@ -76,6 +78,10 @@ impl CloudPatcherConfig {
     }
 }
 
+/**
+* Embedding layer, which transforms point cloud data
+* into conventional patch embeddings, which ViT can process
+*/
 #[derive(Module, Debug)]
 pub struct CloudPatchEmbedding<B: Backend> {
     patcher: CloudPatcher<B>,

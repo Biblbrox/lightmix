@@ -11,33 +11,23 @@ burn = { version = "0.21.0", features = [
     "train",
     "tui",
     "flex",
-    "cpu",
 ], default-features = false }
-burn-fusion = { version = "0.21.0", default-features = false, features = [
-    "std",
-] }
-burn-cubecl-fusion = "0.21.0"
-burn-cuda = "0.21.0"
-polars = { version = "0.53.0", features = [
+polars = { version = "0.54.3", features = [
     "async",
     "parquet",
     "lazy",
     "ipc",
-    "new_streaming",
     "performant",
 ], default-features = false }
 toml = { version = "1.1.2", default-features = false, features = ["parse"] }
-cubecl = { version = "0.10.0", features = ["cuda"] }
 image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
     "png",
 ], optional = true }
-burn-cubecl = "0.21.0"
 tikv-jemallocator = { version = "0.7.0", optional = true }
-rand = { version = "0.10.1", default-features = false }
+fastrand = "2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
-rand_distr = "0.6.0"
 rerun = { version = "0.33.0", optional = true, default-features = false, features = [
     "sdk",
 ] }
@@ -47,10 +37,12 @@ default = []
 viz-rerun = ["dep:rerun"]
 decode = ["dep:image"]
 jemalloc = ["dep:tikv-jemallocator"]
+in_memory_loader = []
 
 [dev-dependencies]
 tempfile = "3.27.0"
 indicatif = { version = "0.18.4", default-features = false }
+cubecl = { version = "0.10.0", features = ["cuda"] }
 
 [[bench]]
 name = "embeddings"

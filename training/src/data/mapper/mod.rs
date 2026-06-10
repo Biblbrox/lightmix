@@ -32,7 +32,8 @@ pub fn decode_image_lazy(df: DataFrame, image_col: &'static str) -> DataFrame {
                     .struct_()?
                     .field_by_name("bytes")?
                     .binary()?
-                    .into_no_null_iter()
+                    .iter()
+                    .flatten()
                     .map(|bytes| {
                         let image = ImageReader::new(Cursor::new(bytes))
                             .with_guessed_format()
@@ -50,4 +51,5 @@ pub fn decode_image_lazy(df: DataFrame, image_col: &'static str) -> DataFrame {
         ))
         .collect_with_engine(Engine::Streaming)
         .unwrap()
+        .unwrap_single()
 }

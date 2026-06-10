@@ -4,7 +4,10 @@ use burn::{
     data::dataloader::{DataLoader, DataLoaderIterator, Progress},
     tensor::backend::Backend,
 };
-use polars::prelude::*;
+use polars::lazy::{
+    dsl::{Engine, len},
+    frame::LazyFrame,
+};
 
 use crate::{
     augmentations::Pipeline,
@@ -50,6 +53,7 @@ impl<B: Backend> StreamingDataLoader<B> {
             .select([len()])
             .collect_with_engine(Engine::Streaming)
             .unwrap()
+            .unwrap_single()
             .column("len")
             .unwrap()
             .u32()

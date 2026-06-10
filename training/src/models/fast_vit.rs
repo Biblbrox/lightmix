@@ -95,11 +95,7 @@ impl FastViTConfig {
     pub fn model_name(&self) -> String {
         format!(
             "fast_vit-head{}-hid{}-emb{}-enc{}-temp{}",
-            self.num_heads,
-            self.hidden_dim,
-            self.embed_dim,
-            self.num_encoders,
-            self.sinkhorn_temp
+            self.num_heads, self.hidden_dim, self.embed_dim, self.num_encoders, self.sinkhorn_temp
         )
     }
 }

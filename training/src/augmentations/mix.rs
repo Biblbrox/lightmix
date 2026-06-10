@@ -2,8 +2,8 @@ use burn::{
     prelude::Tensor,
     tensor::{Int, backend::Backend},
 };
-use rand::RngExt;
-use rand_distr::{Beta, Distribution};
+
+use crate::utils::sample_beta;
 
 pub struct CutMixOutput<B: Backend> {
     pub images: Tensor<B, 4>,
@@ -27,7 +27,7 @@ impl CutMix {
         images: Tensor<B, 4>,
         labels: Tensor<B, 1, Int>,
     ) -> CutMixOutput<B> {
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
         let [b, c, h, w] = [
             images.dims()[0],
             images.dims()[1],
@@ -36,14 +36,13 @@ impl CutMix {
         ];
         let device = images.device();
 
-        let beta = Beta::new(self.alpha, self.alpha).expect("invalid Beta params");
-        let lambda = beta.sample(&mut rng) as f32;
+        let lambda = sample_beta(&mut rng, self.alpha, self.alpha) as f32;
 
         let cut_h = ((h as f32) * (1.0 - lambda).sqrt()) as usize;
         let cut_w = ((w as f32) * (1.0 - lambda).sqrt()) as usize;
 
-        let cx = rng.random_range(0..w);
-        let cy = rng.random_range(0..h);
+        let cx = rng.usize(0..w);
+        let cy = rng.usize(0..h);
 
         let x1 = cx.saturating_sub(cut_w / 2).min(w - cut_w.max(1));
         let y1 = cy.saturating_sub(cut_h / 2).min(h - cut_h.max(1));
@@ -57,7 +56,7 @@ impl CutMix {
             let mut idx: Vec<i32> = (0..b as i32).collect();
             // Fisher-Yates
             for i in (1..b).rev() {
-                let j = rng.random_range(0..=i);
+                let j = rng.usize(0..=i);
                 idx.swap(i, j);
             }
             idx
@@ -115,17 +114,16 @@ impl MixUp {
         images: Tensor<B, 4>,
         labels: Tensor<B, 1, Int>,
     ) -> MixUpOutput<B> {
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
         let b = images.dims()[0];
         let device = images.device();
 
-        let beta = Beta::new(self.alpha, self.alpha).expect("invalid Beta params");
-        let lambda = beta.sample(&mut rng) as f32;
+        let lambda = sample_beta(&mut rng, self.alpha, self.alpha) as f32;
 
         let shuffled_idx: Vec<i32> = {
             let mut idx: Vec<i32> = (0..b as i32).collect();
             for i in (1..b).rev() {
-                let j = rng.random_range(0..=i);
+                let j = rng.usize(0..=i);
                 idx.swap(i, j);
             }
             idx

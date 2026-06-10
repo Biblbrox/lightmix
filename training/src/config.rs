@@ -181,21 +181,21 @@ impl ParsedConfig {
         let mut dataset_name = shared.active_dataset.clone();
         let mut model_name = shared.active_model.clone();
 
-        // Collect shared fields and detect active_dataset/active_model changes
+        // Extract active_dataset/active_model from local_table for section selection
+        if let Some(ds) = local_table.get("active_dataset").and_then(|v| v.as_str()) {
+            dataset_name = ds.to_string();
+        }
+        if let Some(md) = local_table.get("active_model").and_then(|v| v.as_str()) {
+            model_name = md.to_string();
+        }
+
+        // Collect shared fields
         let mut local_shared_keys: Vec<(String, &Value)> = vec![];
         for (key, value) in &local_table {
             match key.as_str() {
                 "random_seed" | "learning_rate" | "cache_dir" | "num_workers"
-                | "continue_training" | "resume_epoch" => {
+                | "continue_training" | "resume_epoch" | "active_dataset" | "active_model" => {
                     local_shared_keys.push((key.clone(), value));
-                }
-                "active_dataset" => {
-                    let new_ds = value.as_str().unwrap();
-                    dataset_name = new_ds.to_string();
-                }
-                "active_model" => {
-                    let new_md = value.as_str().unwrap();
-                    model_name = new_md.to_string();
                 }
                 _ => {}
             }
@@ -251,56 +251,38 @@ impl ParsedConfig {
                 )
             });
 
-        // Build a lookup of default transforms by name for easy override matching
-        let defaults_by_name: HashMap<&str, &PipelineDefault> = pipeline
-            .transforms
-            .iter()
-            .map(|t| (t.name.as_str(), t))
-            .collect();
+        let find_default = |name: &str, kind: &str| -> Option<&PipelineDefault> {
+            pipeline
+                .transforms
+                .iter()
+                .find(|t| t.name == name && t.kind == kind)
+        };
 
         let mut transforms_train: Vec<crate::augmentations::builder::TransformConfig> = vec![];
         let mut transforms_val: Vec<crate::augmentations::builder::TransformConfig> = vec![];
-
-        // Process transforms in the specified order, deep-merging overrides with defaults
         for transform_name in &raw.transforms {
-            let default_transform = defaults_by_name
-                .get(transform_name.as_str())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Dataset '{}' orders transform '{}' but it is not defined in pipeline '{}'",
-                        raw.num_classes, transform_name, raw.augmentation_pipeline
-                    )
-                });
+            for kind in &["train", "val"] {
+                if let Some(default_transform) = find_default(transform_name, kind) {
+                    let params = match raw.augmentations.get(transform_name.as_str()) {
+                        Some(override_table) => {
+                            Self::deep_merge_params(&default_transform.params, override_table)
+                        }
+                        None => default_transform.params.clone(),
+                    };
 
-            // Deep-merge override params into default params (override fills/overwrites defaults)
-            let params = match raw.augmentations.get(transform_name.as_str()) {
-                Some(override_table) => {
-                    Self::deep_merge_params(&default_transform.params, override_table)
+                    let transform = crate::augmentations::builder::TransformConfig {
+                        name: transform_name.clone(),
+                        params,
+                    };
+
+                    match *kind {
+                        "train" => transforms_train.push(transform),
+                        "val" => transforms_val.push(transform),
+                        _ => {}
+                    }
                 }
-                None => default_transform.params.clone(),
-            };
-
-            let transform = crate::augmentations::builder::TransformConfig {
-                name: transform_name.clone(),
-                params,
-            };
-
-            match default_transform.kind.as_str() {
-                "train" => transforms_train.push(transform),
-                "val" => transforms_val.push(transform),
-                _ => {}
             }
         }
-
-        // Check that all overrides reference existing transforms (catch typos)
-        raw.augmentations.keys().for_each(|override_name| {
-            if !defaults_by_name.contains_key(override_name.as_str()) {
-                panic!(
-                    "Override references unknown transform '{}' in dataset '{}'",
-                    override_name, raw.num_classes
-                );
-            }
-        });
 
         AugmentationConfig {
             transforms_train,
