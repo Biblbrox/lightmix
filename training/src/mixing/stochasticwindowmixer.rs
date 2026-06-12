@@ -2,7 +2,12 @@ use burn::{
     config::Config,
     module::{Module, Param},
     prelude::Tensor,
-    tensor::{Distribution, Int, activation::softmax, backend::Backend, s},
+    tensor::{
+        Distribution, Int,
+        activation::{relu, softmax},
+        backend::Backend,
+        s,
+    },
 };
 
 use crate::mixing::sinkhorn;
@@ -102,7 +107,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
         }
     }
 
-    fn calc_qkv_hard(&self, x: Tensor<B, 4>) -> (Tensor<B, 5>, Tensor<B, 4>, Tensor<B, 4>) {
+    fn calc_qkv_hard(&self, x: Tensor<B, 4>) -> (Tensor<B, 5>, Tensor<B, 5>, Tensor<B, 5>) {
         let dk = x.dims()[3];
         let [q, k, v] = [self.q_mat.val(), self.k_mat.val(), self.v_mat.val()];
 
@@ -115,23 +120,23 @@ impl<B: Backend> StochasticWindowMixer<B> {
         match self.stoch_mode.clone() {
             StochasticMode::Q => (
                 apply_stochastic(q).unsqueeze_dim(3),
-                apply_linear(k),
-                apply_linear(v),
+                self.local_window(apply_linear(k)),
+                self.local_window(apply_linear(v)),
             ),
             StochasticMode::K => (
                 apply_linear(q).unsqueeze_dim(3),
-                apply_stochastic(k),
-                apply_linear(v),
+                self.local_window(apply_stochastic(k)),
+                self.local_window(apply_linear(v)),
             ),
             StochasticMode::Qk => (
                 apply_stochastic(q).unsqueeze_dim(3),
-                apply_stochastic(k),
-                apply_linear(v),
+                self.local_window(apply_stochastic(k)),
+                self.local_window(apply_linear(v)),
             ),
             StochasticMode::Qkv => (
                 apply_stochastic(q).unsqueeze_dim(3),
-                apply_stochastic(k),
-                apply_stochastic(v),
+                self.local_window(apply_stochastic(k)),
+                self.local_window(apply_stochastic(v)),
             ),
         }
     }
@@ -151,12 +156,11 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let x = x.reshape([b, n, h, dk]);
         let (q, k, v) = self.calc_qkv_hard(x);
 
-        let k_win = self.local_window(k);
-        let best_i = (q.matmul(k_win) * self.inv_scale + self.band_bias.val()).argmax(4); // [B, N, H, 1, 1]
+        let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
+        let p = softmax(scores, 4);
+        let out = v.matmul(p.transpose());
 
-        let index = best_i.expand([b, n, h, dk, 1]);
-        let v_win = self.local_window(v);
-        v_win.gather(4, index).reshape([b, n, e]) // [B, N, e]
+        out.reshape([b, n, e])
     }
 
     pub fn forward_soft(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
@@ -167,15 +171,15 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let x = x.reshape([b, n, h, dk]); // [B, H, N, d]
 
         let qkv = x.matmul(self.calc_qkv_soft());
-        let q = qkv.clone().slice_dim(3, s![0..dk]).unsqueeze_dim(3); // [B, N, H, 1, d]
-        let kv = self.local_window(qkv.slice_dim(3, s![dk..3 * dk])); // [B, N, H, d]
+        // [B, N, H, 1, dk]
+        let q = qkv.clone().slice_dim(3, s![0..dk]).unsqueeze_dim(3);
+        // [B, N+2*kernel_size+1, H, dk, kernel_size]
+        let kv = self.local_window(qkv.slice_dim(3, s![dk..3 * dk]));
         let k = kv.clone().slice_dim(3, s![0..dk]);
         let v = kv.slice_dim(3, s![dk..2 * dk]);
 
         let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
-
         let p = softmax(scores, 4);
-
         let out = v.matmul(p.transpose());
 
         out.reshape([b, n, e])
