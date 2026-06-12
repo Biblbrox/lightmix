@@ -16,31 +16,35 @@ pub enum StochasticMode {
 }
 
 #[derive(Config, Debug)]
+pub enum SelectMethod {
+    Argmax,
+    Topk,
+}
+
+#[derive(Config, Debug)]
 pub struct StochasticWindowMixerConfig {
     pub embed_dim: usize,
     pub seq_length: usize,
     pub num_heads: usize,
     pub kernel_size: usize,
     pub temperature: f32,
-    #[config(default = "StochasticMode::Qkv")]
-    pub mode: StochasticMode,
+    #[config(default = "StochasticMode::Qk")]
+    pub stoch_mode: StochasticMode,
 }
 
 #[derive(Module, Debug)]
 pub struct StochasticWindowMixer<B: Backend> {
-    /// Fused logit tensor. Part of it (or all of it) will be double-stochastic
-    /// depending on the provided StochasticMode
     q_mat: Param<Tensor<B, 4>>,
     k_mat: Param<Tensor<B, 4>>,
     v_mat: Param<Tensor<B, 4>>,
     inv_scale: f32,
-    band_bias: Param<Tensor<B, 4>>, // [H, N, 2w+1]
+    band_bias: Param<Tensor<B, 5>>, // [H, N, 2w+1]
     temperature: f32,
     half_width: usize,
     num_heads: usize,
     dk: usize,
     window_indices: Tensor<B, 1, Int>, // [N * bw]
-    mode: StochasticMode,
+    stoch_mode: StochasticMode,
     seq_length: usize,
 }
 
@@ -62,7 +66,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
 
     fn calc_qkv_soft(&self) -> Tensor<B, 4> {
         let t = self.temperature;
-        match self.mode.clone() {
+        match self.stoch_mode.clone() {
             StochasticMode::Q => Tensor::cat(
                 vec![
                     sinkhorn(self.q_mat.val(), t),
@@ -108,7 +112,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
 
         let apply_linear = |mat: Tensor<B, 4>| -> Tensor<B, 4> { x.clone().matmul(mat) };
 
-        match self.mode.clone() {
+        match self.stoch_mode.clone() {
             StochasticMode::Q => (
                 apply_stochastic(q).unsqueeze_dim(3),
                 apply_linear(k),
@@ -148,11 +152,10 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let (q, k, v) = self.calc_qkv_hard(x);
 
         let k_win = self.local_window(k);
-        let v_win = self.local_window(v);
-        let best_i =
-            (q.matmul(k_win).squeeze_dim(3) * self.inv_scale + self.band_bias.val()).argmax(3); // [B, N, H, 1]
+        let best_i = (q.matmul(k_win) * self.inv_scale + self.band_bias.val()).argmax(4); // [B, N, H, 1, 1]
 
-        let index = best_i.unsqueeze_dim::<5>(4).expand([b, n, h, dk, 1]);
+        let index = best_i.expand([b, n, h, dk, 1]);
+        let v_win = self.local_window(v);
         v_win.gather(4, index).reshape([b, n, e]) // [B, N, e]
     }
 
@@ -164,18 +167,16 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let x = x.reshape([b, n, h, dk]); // [B, H, N, d]
 
         let qkv = x.matmul(self.calc_qkv_soft());
-
         let q = qkv.clone().slice_dim(3, s![0..dk]).unsqueeze_dim(3); // [B, N, H, 1, d]
-        let k = qkv.clone().slice_dim(3, s![dk..2 * dk]); // [B, N, H, d]
-        let v = qkv.slice_dim(3, s![2 * dk..3 * dk]); // [B, N, H, d]
+        let kv = self.local_window(qkv.slice_dim(3, s![dk..3 * dk])); // [B, N, H, d]
+        let k = kv.clone().slice_dim(3, s![0..dk]);
+        let v = kv.slice_dim(3, s![dk..2 * dk]);
 
-        let k_win = self.local_window(k);
-        let scores = q.matmul(k_win).squeeze_dim(3) * self.inv_scale + self.band_bias.val();
+        let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
 
-        let p = softmax(scores, 3);
+        let p = softmax(scores, 4);
 
-        let v_win = self.local_window(v);
-        let out = v_win.matmul(p.unsqueeze_dim(4));
+        let out = v.matmul(p.transpose());
 
         out.reshape([b, n, e])
     }
@@ -206,8 +207,8 @@ impl StochasticWindowMixerConfig {
         };
 
         StochasticWindowMixer {
-            band_bias: Param::from_tensor(Tensor::<B, 4>::zeros(
-                [1, self.seq_length, self.num_heads, window],
+            band_bias: Param::from_tensor(Tensor::<B, 5>::zeros(
+                [1, self.seq_length, self.num_heads, 1, window],
                 device,
             ))
             .set_require_grad(true),
@@ -220,7 +221,7 @@ impl StochasticWindowMixerConfig {
             dk,
             inv_scale: 1.0 / ((dk as f32).sqrt() * self.temperature),
             window_indices: window_indices.clone().reshape([n * window]),
-            mode: self.mode.clone(),
+            stoch_mode: self.stoch_mode.clone(),
             seq_length: self.seq_length,
         }
     }
