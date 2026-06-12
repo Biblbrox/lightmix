@@ -69,40 +69,28 @@ impl<B: Backend> StochasticWindowMixer<B> {
             .permute([0, 1, 3, 4, 2]) // [B, N, H, dk, bw]
     }
 
-    fn calc_qkv_soft(&self) -> Tensor<B, 4> {
+    fn calc_qkv_soft(&self) -> (Tensor<B, 4>, Tensor<B, 4>, Tensor<B, 4>) {
         let t = self.temperature;
-        match self.stoch_mode.clone() {
-            StochasticMode::Q => Tensor::cat(
-                vec![
-                    sinkhorn(self.q_mat.val(), t),
-                    self.k_mat.val(),
-                    self.v_mat.val(),
-                ],
-                3,
+        match self.stoch_mode {
+            StochasticMode::Q => (
+                sinkhorn(self.q_mat.val(), t),
+                self.k_mat.val(),
+                self.v_mat.val(),
             ),
-            StochasticMode::K => Tensor::cat(
-                vec![
-                    self.q_mat.val(),
-                    sinkhorn(self.k_mat.val(), t),
-                    self.v_mat.val(),
-                ],
-                3,
+            StochasticMode::K => (
+                self.q_mat.val(),
+                sinkhorn(self.k_mat.val(), t),
+                self.v_mat.val(),
             ),
-            StochasticMode::Qk => Tensor::cat(
-                vec![
-                    sinkhorn(self.q_mat.val(), t),
-                    sinkhorn(self.k_mat.val(), t),
-                    self.v_mat.val(),
-                ],
-                3,
+            StochasticMode::Qk => (
+                sinkhorn(self.q_mat.val(), t),
+                sinkhorn(self.k_mat.val(), t),
+                self.v_mat.val(),
             ),
-            StochasticMode::Qkv => Tensor::cat(
-                vec![
-                    sinkhorn(self.q_mat.val(), t),
-                    sinkhorn(self.k_mat.val(), t),
-                    sinkhorn(self.v_mat.val(), t),
-                ],
-                3,
+            StochasticMode::Qkv => (
+                sinkhorn(self.q_mat.val(), t),
+                sinkhorn(self.k_mat.val(), t),
+                sinkhorn(self.v_mat.val(), t),
             ),
         }
     }
@@ -154,8 +142,8 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let h = self.num_heads;
 
         let x = x.reshape([b, n, h, dk]);
-        let (q, k, v) = self.calc_qkv_hard(x);
 
+        let (q, k, v) = self.calc_qkv_hard(x);
         let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
         let p = softmax(scores, 4);
         let out = v.matmul(p.transpose());
@@ -168,19 +156,18 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let dk = self.dk;
         let h = self.num_heads;
 
-        let x = x.reshape([b, n, h, dk]); // [B, H, N, d]
+        let x = x.reshape([b, n, h, dk]);
 
-        let qkv = x.matmul(self.calc_qkv_soft());
-        // [B, N, H, 1, dk]
-        let q = qkv.clone().slice_dim(3, s![0..dk]).unsqueeze_dim(3);
-        // [B, N+2*kernel_size+1, H, dk, kernel_size]
-        let kv = self.local_window(qkv.slice_dim(3, s![dk..3 * dk]));
-        let k = kv.clone().slice_dim(3, s![0..dk]);
-        let v = kv.slice_dim(3, s![dk..2 * dk]);
+        let (w_q, w_k, w_v) = self.calc_qkv_soft();
+        let q = x.clone().matmul(w_q).unsqueeze_dim(3); // [B,N,H,dk]
+        let k = x.clone().matmul(w_k); // [B,N,H,dk]
+        let v = x.matmul(w_v); // [B,N,H,dk]
 
-        let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
-        let p = softmax(scores, 4);
-        let out = v.matmul(p.transpose());
+        let k_win = self.local_window(k); // [B,N,H,dk,bw]
+        let scores = q.matmul(k_win) * self.inv_scale + self.band_bias.val();
+        let p = softmax(scores, 4); // [B,N,H,1,bw]
+        let v_win = self.local_window(v); // [B,N,H,dk,bw]
+        let out = v_win.matmul(p.transpose()); // [B,N,H,dk,1]
 
         out.reshape([b, n, e])
     }
@@ -223,7 +210,8 @@ impl StochasticWindowMixerConfig {
             k_mat: init_logits(),
             v_mat: init_logits(),
             dk,
-            inv_scale: 1.0 / ((dk as f32).sqrt() * self.temperature),
+            //inv_scale: 1.0 / ((dk as f32).sqrt() * self.temperature),
+            inv_scale: 1.0 / (dk as f32).sqrt(),
             window_indices: window_indices.clone().reshape([n * window]),
             stoch_mode: self.stoch_mode.clone(),
             seq_length: self.seq_length,
