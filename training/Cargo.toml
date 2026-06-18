@@ -5,31 +5,31 @@ edition = "2024"
 
 [dependencies]
 burn = { version = "0.21.0", features = [
-    "fusion",
-    "std",
-    "cuda",
-    "train",
-    "tui",
-    "flex",
+  "fusion",
+  "std",
+  "cuda",
+  "train",
+  "tui",
+  "flex",
 ], default-features = false }
 polars = { version = "0.54.3", features = [
-    "async",
-    "parquet",
-    "lazy",
-    "ipc",
-    "performant",
+  "async",
+  "parquet",
+  "lazy",
+  "ipc",
+  "performant",
 ], default-features = false }
 toml = { version = "1.1.2", default-features = false, features = ["parse"] }
 image = { version = "0.25.10", default-features = false, features = [
-    "jpeg",
-    "png",
+  "jpeg",
+  "png",
 ], optional = true }
 tikv-jemallocator = { version = "0.7.0", optional = true }
 fastrand = "2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 rerun = { version = "0.33.0", optional = true, default-features = false, features = [
-    "sdk",
+  "sdk",
 ] }
 
 [features]
@@ -64,11 +64,9 @@ harness = false
 name = "data"
 harness = false
 
-
 [[bench]]
 name = "models"
 harness = false
-
 
 [[bench]]
 name = "norm"

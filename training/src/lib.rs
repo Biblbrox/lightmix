@@ -1,3 +1,4 @@
+pub mod attention;
 pub mod augmentations;
 pub mod config;
 pub mod conv;
@@ -9,7 +10,6 @@ pub mod kernels;
 pub mod linear;
 pub mod logging;
 pub mod metrics;
-pub mod mixing;
 pub mod models;
 pub mod norm;
 pub mod spectre;
