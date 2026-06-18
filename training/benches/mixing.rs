@@ -5,7 +5,7 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use lightmix::mixing::{
+use lightmix::attention::{
     learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
     staticmixer::{PermutationStrategy, StaticMixer, StaticMixerConfig},
     stochasticmixer::{StochasticMixer, StochasticMixerConfig},

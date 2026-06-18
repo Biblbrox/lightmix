@@ -9,10 +9,10 @@ use burn::{
 use serde::Deserialize;
 
 use crate::{
+    attention::cascadedattention::{CascadedGroupAttention, CascadedGroupAttentionConfig},
     conv::{ConvBNAct, ConvBNActConfig, MBConv, MBConvConfig},
     data::batch::Batch,
     embeddings::overlapped::{PatchEmbeddingOverlapped, PatchEmbeddingOverlappedConfig},
-    mixing::cascadedattention::{CascadedGroupAttention, CascadedGroupAttentionConfig},
     models::ModelConfig,
 };
 

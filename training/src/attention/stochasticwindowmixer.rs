@@ -2,15 +2,10 @@ use burn::{
     config::Config,
     module::{Module, Param},
     prelude::Tensor,
-    tensor::{
-        Distribution, Int,
-        activation::{relu, softmax},
-        backend::Backend,
-        s,
-    },
+    tensor::{Distribution, Int, activation::softmax, backend::Backend},
 };
 
-use crate::mixing::sinkhorn;
+use crate::attention::{NormalizationMode, sinkhorn};
 
 #[derive(Config, Debug)]
 pub enum StochasticMode {
@@ -35,6 +30,12 @@ pub struct StochasticWindowMixerConfig {
     pub temperature: f32,
     #[config(default = "StochasticMode::Qk")]
     pub stoch_mode: StochasticMode,
+    // This parameter describes whether matrices should be normalized by rows only
+    // (stochastic) or rows and columns (double stochastic).
+    #[config(default = "NormalizationMode::Double")]
+    pub norm_mode: NormalizationMode,
+    #[config(default = "SelectMethod::Argmax")]
+    pub select_mode: SelectMethod,
 }
 
 #[derive(Module, Debug)]
@@ -50,6 +51,8 @@ pub struct StochasticWindowMixer<B: Backend> {
     dk: usize,
     window_indices: Tensor<B, 1, Int>, // [N * bw]
     stoch_mode: StochasticMode,
+    norm_mode: NormalizationMode,
+    select_mode: SelectMethod,
     seq_length: usize,
 }
 
@@ -73,24 +76,24 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let t = self.temperature;
         match self.stoch_mode {
             StochasticMode::Q => (
-                sinkhorn(self.q_mat.val(), t),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
                 self.k_mat.val(),
                 self.v_mat.val(),
             ),
             StochasticMode::K => (
                 self.q_mat.val(),
-                sinkhorn(self.k_mat.val(), t),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
                 self.v_mat.val(),
             ),
             StochasticMode::Qk => (
-                sinkhorn(self.q_mat.val(), t),
-                sinkhorn(self.k_mat.val(), t),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
                 self.v_mat.val(),
             ),
             StochasticMode::Qkv => (
-                sinkhorn(self.q_mat.val(), t),
-                sinkhorn(self.k_mat.val(), t),
-                sinkhorn(self.v_mat.val(), t),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.v_mat.val(), t, self.norm_mode.clone()),
             ),
         }
     }
@@ -215,6 +218,8 @@ impl StochasticWindowMixerConfig {
             window_indices: window_indices.clone().reshape([n * window]),
             stoch_mode: self.stoch_mode.clone(),
             seq_length: self.seq_length,
+            norm_mode: self.norm_mode.clone(),
+            select_mode: self.select_mode.clone(),
         }
     }
 }
@@ -273,8 +278,6 @@ mod tests {
     }
 
     /// Test 1: Interior tokens — both approaches must agree exactly.
-    /// Uses a window that never touches the boundary so clamping vs zero-padding
-    /// doesn't matter. This is the pure correctness test.
     #[test]
     fn test_interior_tokens_match() {
         let device = device();
@@ -302,9 +305,6 @@ mod tests {
     }
 
     /// Test 2: Boundary behaviour difference is expected and documented.
-    /// select uses clamp (repeats edge token), unfold uses zero padding.
-    /// This test asserts they DIFFER at boundaries (confirming our understanding)
-    /// and that the difference is exactly at the boundary tokens.
     #[test]
     fn test_boundary_behaviour_difference() {
         let device = device();

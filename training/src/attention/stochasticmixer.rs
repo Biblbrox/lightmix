@@ -6,7 +6,7 @@ use burn::{
     tensor::{Distribution, Int, activation::softmax, backend::Backend, s},
 };
 
-use crate::mixing::sinkhorn;
+use crate::attention::{NormalizationMode, sinkhorn};
 
 #[derive(Module, Debug)]
 pub struct StochasticMixer<B: Backend> {
@@ -46,7 +46,11 @@ impl<B: Backend> StochasticMixer<B> {
         let x_q = x.clone();
         let x_k = x.clone();
 
-        let qk = sinkhorn(self.proj_qk_logits.val(), self.temperature);
+        let qk = sinkhorn(
+            self.proj_qk_logits.val(),
+            self.temperature,
+            NormalizationMode::Double,
+        );
         let w_q = qk.clone().slice_dim(1, s![0..h]); // [1, H, d, d]
         let w_k = qk.slice_dim(1, s![h..2 * h]); // [1, H, d, d]
 

@@ -9,8 +9,8 @@ use burn::{
 };
 
 use crate::{
+    attention::stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
     linear::{LinearLayer, monarch::MonarchLinearConfig},
-    mixing::stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
 
