@@ -1,7 +1,6 @@
 use crate::data::batch::{
-    Batcher, cifar10::Cifar10Batcher, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher,
-    food101::Food101Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
-    modelnet40::ModelNet40Batcher, tinyimagenet::TinyImageNetBatcher,
+    Batcher, Cifar10Batcher, Cifar100Batcher, FashionMnistBatcher, Food101Batcher,
+    ImageNet1kBatcher, MnistBatcher, TinyImageNetBatcher, modelnet40::ModelNet40Batcher,
 };
 
 use super::{
