@@ -4,9 +4,8 @@ use crate::data::batch::{
 };
 
 use super::{
-    LazyDataset, LazyFiletype, cifar10::Cifar10Dataset, cifar100::Cifar100Dataset,
-    fashionmnist::FashionMnistDataset, food101::Food101Dataset, imagenet1k::ImageNet1kDataset,
-    mnist::MnistDataset, modelnet40::ModelNet40Dataset, tinyimagenet::TinyImageNetDataset,
+    LazyDataset, LazyFiletype, Cifar10Dataset, Cifar100Dataset, FashionMnistDataset,
+    Food101Dataset, ImageNet1kDataset, MnistDataset, ModelNet40Dataset, TinyImageNetDataset,
 };
 use burn::tensor::backend::Backend;
 use polars::prelude::*;

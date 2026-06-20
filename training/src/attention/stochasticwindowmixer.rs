@@ -162,7 +162,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let x = x.reshape([b, n, h, dk]);
 
         let (w_q, w_k, w_v) = self.calc_qkv_soft();
-        let q = x.clone().matmul(w_q).unsqueeze_dim(3); // [B,N,H,dk]
+        let q = x.clone().matmul(w_q).unsqueeze_dim(3); // [B,N,H,1,dk]
         let k = x.clone().matmul(w_k); // [B,N,H,dk]
         let v = x.matmul(w_v); // [B,N,H,dk]
 
