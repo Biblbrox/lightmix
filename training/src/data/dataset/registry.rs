@@ -1,13 +1,11 @@
 use crate::data::batch::{
-    Batcher, cifar10::Cifar10Batcher, cifar100::Cifar100Batcher, fashionmnist::FashionMnistBatcher,
-    food101::Food101Batcher, imagenet1k::ImageNet1kBatcher, mnist::MnistBatcher,
-    modelnet40::ModelNet40Batcher, tinyimagenet::TinyImageNetBatcher,
+    Batcher, Cifar10Batcher, Cifar100Batcher, FashionMnistBatcher, Food101Batcher,
+    ImageNet1kBatcher, MnistBatcher, TinyImageNetBatcher, modelnet40::ModelNet40Batcher,
 };
 
 use super::{
-    LazyDataset, LazyFiletype, cifar10::Cifar10Dataset, cifar100::Cifar100Dataset,
-    fashionmnist::FashionMnistDataset, food101::Food101Dataset, imagenet1k::ImageNet1kDataset,
-    mnist::MnistDataset, modelnet40::ModelNet40Dataset, tinyimagenet::TinyImageNetDataset,
+    LazyDataset, LazyFiletype, Cifar10Dataset, Cifar100Dataset, FashionMnistDataset,
+    Food101Dataset, ImageNet1kDataset, MnistDataset, ModelNet40Dataset, TinyImageNetDataset,
 };
 use burn::tensor::backend::Backend;
 use polars::prelude::*;

@@ -53,7 +53,7 @@ name = "encoders"
 harness = false
 
 [[bench]]
-name = "mixing"
+name = "attention"
 harness = false
 
 [[bench]]
