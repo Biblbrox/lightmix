@@ -1,5 +1,4 @@
 use burn::{
-    config::Config,
     module::{Module, Param},
     prelude::Tensor,
     tensor::{Distribution, Int, activation::softmax, backend::Backend},
@@ -7,7 +6,7 @@ use burn::{
 
 use crate::attention::{NormalizationMode, sinkhorn};
 
-#[derive(Config, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum StochasticMode {
     Q,
     K,
@@ -15,27 +14,60 @@ pub enum StochasticMode {
     Qkv,
 }
 
-#[derive(Config, Debug)]
+impl Default for StochasticMode {
+    fn default() -> Self {
+        Self::Qk
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SelectMethod {
     Argmax,
     Topk,
 }
 
-#[derive(Config, Debug)]
+impl Default for SelectMethod {
+    fn default() -> Self {
+        Self::Argmax
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StochasticWindowMixerConfig {
     pub embed_dim: usize,
     pub seq_length: usize,
     pub num_heads: usize,
     pub kernel_size: usize,
     pub temperature: f32,
-    #[config(default = "StochasticMode::Qk")]
+    #[serde(default)]
     pub stoch_mode: StochasticMode,
     // This parameter describes whether matrices should be normalized by rows only
     // (stochastic) or rows and columns (double stochastic).
-    #[config(default = "NormalizationMode::Double")]
+    #[serde(default)]
     pub norm_mode: NormalizationMode,
-    #[config(default = "SelectMethod::Argmax")]
+    #[serde(default)]
     pub select_mode: SelectMethod,
+}
+
+impl StochasticWindowMixerConfig {
+    pub fn new(
+        embed_dim: usize,
+        seq_length: usize,
+        num_heads: usize,
+        kernel_size: usize,
+        temperature: f32,
+    ) -> Self {
+        Self {
+            embed_dim,
+            seq_length,
+            num_heads,
+            kernel_size,
+            temperature,
+            stoch_mode: StochasticMode::default(),
+            norm_mode: NormalizationMode::default(),
+            select_mode: SelectMethod::default(),
+        }
+    }
 }
 
 #[derive(Module, Debug)]

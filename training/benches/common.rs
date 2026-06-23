@@ -2,8 +2,110 @@ use std::fs::OpenOptions;
 
 use burn::backend::Autodiff;
 use cubecl::benchmark::BenchmarkComputations;
+use lightmix::attention::{
+    AttentionConfig,
+    csp_attention::CspConfig,
+    learnedmixer::LearnedPermuterConfig,
+    self_attention::SelfAttentionConfig,
+    sinkformer::SinkformerMixerConfig,
+    staticmixer::{PermutationStrategy, StaticMixerConfig},
+    stochasticmixer::StochasticMixerConfig,
+    stochasticwindowmixer::StochasticWindowMixerConfig,
+};
 use serde::Serialize;
 use std::io::Write;
+
+/// Simple enum listing attention variants for benchmark iteration.
+#[derive(Debug, Clone, Copy)]
+pub enum AttentionVariant {
+    SelfAttention,
+    Sinkformer,
+    Csp,
+    StochasticMixer,
+    StaticMixer,
+    LearnedPermuter,
+    StochasticWindow,
+}
+
+impl AttentionVariant {
+    pub fn all_variants() -> &'static [AttentionVariant] {
+        &[
+            Self::SelfAttention,
+            Self::Sinkformer,
+            Self::Csp,
+            Self::StochasticMixer,
+            Self::StaticMixer,
+            Self::LearnedPermuter,
+            Self::StochasticWindow,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::SelfAttention => "SelfAttention",
+            Self::Sinkformer => "Sinkformer",
+            Self::Csp => "CSP",
+            Self::StochasticMixer => "StochasticMixer",
+            Self::StaticMixer => "StaticMixer",
+            Self::LearnedPermuter => "LearnedPermuter",
+            Self::StochasticWindow => "StochasticWindow",
+        }
+    }
+}
+
+/// Construct an `AttentionConfig` from common benchmark parameters.
+/// Variant-specific fields use sensible defaults.
+pub fn make_attention_config(
+    variant: AttentionVariant,
+    embed_dim: usize,
+    num_heads: usize,
+    seq_length: usize,
+) -> AttentionConfig {
+    match variant {
+        AttentionVariant::SelfAttention => {
+            AttentionConfig::SelfAttention(SelfAttentionConfig::new(embed_dim, num_heads))
+        }
+        AttentionVariant::Sinkformer => {
+            AttentionConfig::Sinkformer(SinkformerMixerConfig::new(
+                embed_dim,
+                num_heads,
+                3,
+                0.05,
+            ))
+        }
+        AttentionVariant::Csp => {
+            AttentionConfig::Csp(CspConfig::new(embed_dim, seq_length, (seq_length / 2).max(1)))
+        }
+        AttentionVariant::StochasticMixer => {
+            AttentionConfig::StochasticMixer(StochasticMixerConfig::new(embed_dim, num_heads, 0.05))
+        }
+        AttentionVariant::StaticMixer => {
+            AttentionConfig::StaticMixer(StaticMixerConfig::new(
+                embed_dim,
+                seq_length,
+                num_heads,
+                PermutationStrategy::Random,
+            ))
+        }
+        AttentionVariant::LearnedPermuter => {
+            AttentionConfig::LearnedPermuter(LearnedPermuterConfig::new(
+                embed_dim,
+                seq_length,
+                0,
+                0.05,
+            ))
+        }
+        AttentionVariant::StochasticWindow => {
+            AttentionConfig::StochasticWindow(StochasticWindowMixerConfig::new(
+                embed_dim,
+                seq_length,
+                num_heads,
+                3,
+                0.01,
+            ))
+        }
+    }
+}
 
 pub type GpuBackend = burn::backend::cuda::Cuda;
 pub type GpuAutodiffBackend = Autodiff<GpuBackend>;

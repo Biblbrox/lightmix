@@ -1,6 +1,6 @@
 use burn::{
     Tensor,
-    config::Config,
+    module::Module,
     tensor::{TensorPrimitive, backend::Backend, ops::FloatTensor},
 };
 
@@ -13,10 +13,84 @@ pub mod staticmixer;
 pub mod stochasticmixer;
 pub mod stochasticwindowmixer;
 
-#[derive(Config, Debug)]
+use crate::attention::{
+    csp_attention::{Csp, CspConfig},
+    learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
+    self_attention::{SelfAttention, SelfAttentionConfig},
+    sinkformer::{SinkformerMixer, SinkformerMixerConfig},
+    staticmixer::{StaticMixer, StaticMixerConfig},
+    stochasticmixer::{StochasticMixer, StochasticMixerConfig},
+    stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
+};
+
+/// Unified attention layer enum – all variants share Tensor<B,3> -> Tensor<B,3>.
+#[derive(Module, Debug)]
+pub enum AttentionLayer<B: Backend> {
+    StochasticWindow(StochasticWindowMixer<B>),
+    Sinkformer(SinkformerMixer<B>),
+    Csp(Csp<B>),
+    StochasticMixer(StochasticMixer<B>),
+    StaticMixer(StaticMixer<B>),
+    LearnedPermuter(LearnedPermuter<B>),
+    SelfAttention(SelfAttention<B>),
+}
+
+impl<B: Backend> AttentionLayer<B> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        match self {
+            Self::StochasticWindow(m) => m.forward(x),
+            Self::Sinkformer(m) => m.forward(x),
+            Self::Csp(m) => m.forward(x),
+            Self::StochasticMixer(m) => m.forward(x),
+            Self::StaticMixer(m) => m.forward(x),
+            Self::LearnedPermuter(m) => m.forward(x),
+            Self::SelfAttention(m) => m.forward(x),
+        }
+    }
+}
+
+/// Tagged config enum for attention layer selection.
+/// Serializes to TOML as: { type = "StochasticWindow", ...variant_fields... }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum AttentionConfig {
+    StochasticWindow(StochasticWindowMixerConfig),
+    Sinkformer(SinkformerMixerConfig),
+    Csp(CspConfig),
+    StochasticMixer(StochasticMixerConfig),
+    StaticMixer(StaticMixerConfig),
+    LearnedPermuter(LearnedPermuterConfig),
+    SelfAttention(SelfAttentionConfig),
+}
+
+impl AttentionConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> AttentionLayer<B> {
+        match self {
+            Self::StochasticWindow(cfg) => {
+                AttentionLayer::StochasticWindow(cfg.init(device))
+            }
+            Self::Sinkformer(cfg) => AttentionLayer::Sinkformer(cfg.init(device)),
+            Self::Csp(cfg) => AttentionLayer::Csp(cfg.init(device)),
+            Self::StochasticMixer(cfg) => AttentionLayer::StochasticMixer(cfg.init(device)),
+            Self::StaticMixer(cfg) => AttentionLayer::StaticMixer(cfg.init(device)),
+            Self::LearnedPermuter(cfg) => {
+                AttentionLayer::LearnedPermuter(cfg.init(device))
+            }
+            Self::SelfAttention(cfg) => AttentionLayer::SelfAttention(cfg.init(device)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NormalizationMode {
     Single,
     Double,
+}
+
+impl Default for NormalizationMode {
+    fn default() -> Self {
+        Self::Double
+    }
 }
 
 pub fn sinkhorn<B: Backend>(s: Tensor<B, 4>, temp: f32, mode: NormalizationMode) -> Tensor<B, 4> {

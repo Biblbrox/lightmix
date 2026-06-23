@@ -9,10 +9,11 @@ use burn::{
 use serde::Deserialize;
 
 use crate::{
+    attention::AttentionConfig,
     data::batch::Batch,
     embeddings::cloud::{CloudPatchEmbedding, CloudPatchEmbeddingConfig},
     encoders::fast_encoder::{FastEncoder, FastEncoderConfig},
-    models::ModelConfig,
+    models::{ModelConfig, TrainConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
 
@@ -32,15 +33,14 @@ pub struct FastViT3D<B: Backend> {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FastViT3DConfig {
     pub embed_dim: usize,
-    pub num_heads: usize,
     pub num_encoders: usize,
     pub hidden_dim: usize,
     pub dropout: f64,
-    pub sinkhorn_temp: f32,
     pub activation: String,
     pub num_centers: usize,
     pub k_neighbours: usize,
     pub density_radius: f32,
+    pub mix_layer: AttentionConfig,
 }
 
 impl<B: Backend> FastViT3D<B> {
@@ -50,6 +50,19 @@ impl<B: Backend> FastViT3D<B> {
         let x = self.layer_norm.forward(x);
 
         self.linear.forward(x.mean_dim(1)).squeeze()
+    }
+
+    pub fn forward_classification(
+        &self,
+        points: Tensor<B, 3>,
+        targets: Tensor<B, 1, Int>,
+    ) -> ClassificationOutput<B> {
+        let output = self.forward(points);
+        let loss = CrossEntropyLossConfig::new()
+            .init(&output.device())
+            .forward(output.clone(), targets.clone());
+
+        ClassificationOutput::new(loss, output, targets)
     }
 }
 
@@ -68,13 +81,11 @@ impl FastViT3DConfig {
 
             encoder: FastEncoderConfig::new(
                 self.num_encoders,
-                1,
                 self.num_centers,
                 self.embed_dim,
-                self.num_heads,
                 self.hidden_dim,
                 self.dropout,
-                self.sinkhorn_temp,
+                self.mix_layer.clone(),
             )
             .init(device),
 
@@ -86,14 +97,8 @@ impl FastViT3DConfig {
 
     pub fn model_name(&self) -> String {
         format!(
-            "fast_vit_cloud-head{}-hid{}-emb{}-enc{}-temp{}-centers{}-kn{}",
-            self.num_heads,
-            self.hidden_dim,
-            self.embed_dim,
-            self.num_encoders,
-            self.sinkhorn_temp,
-            self.num_centers,
-            self.k_neighbours
+            "fast_vit_cloud-hid{}-emb{}-enc{}-centers{}-kn{}",
+            self.hidden_dim, self.embed_dim, self.num_encoders, self.num_centers, self.k_neighbours
         )
     }
 }
@@ -102,39 +107,12 @@ impl<B: Backend> ModelConfig<B> for FastViT3DConfig {
     type TrainModel = FastViT3D<Autodiff<B>>;
     type ValidModel = FastViT3D<B>;
 
-    fn init_training(
-        &self,
-        device: &B::Device,
-        _in_channels: usize,
-        _image_size: usize,
-        num_classes: usize,
-    ) -> Self::TrainModel {
-        self.init(device, num_classes)
+    fn init_training(&self, device: &B::Device, config: &TrainConfig) -> Self::TrainModel {
+        self.init(device, config.num_classes)
     }
 
-    fn init_inference(
-        &self,
-        device: &B::Device,
-        _in_channels: usize,
-        _image_size: usize,
-        num_classes: usize,
-    ) -> Self::ValidModel {
-        self.init(device, num_classes)
-    }
-}
-
-impl<B: Backend> FastViT3D<B> {
-    pub fn forward_classification(
-        &self,
-        points: Tensor<B, 3>,
-        targets: Tensor<B, 1, Int>,
-    ) -> ClassificationOutput<B> {
-        let output = self.forward(points);
-        let loss = CrossEntropyLossConfig::new()
-            .init(&output.device())
-            .forward(output.clone(), targets.clone());
-
-        ClassificationOutput::new(loss, output, targets)
+    fn init_inference(&self, device: &B::Device, config: &TrainConfig) -> Self::ValidModel {
+        self.init(device, config.num_classes)
     }
 }
 
@@ -174,6 +152,8 @@ mod tests {
         tensor::Shape,
     };
 
+    use crate::attention::stochasticwindowmixer::StochasticWindowMixerConfig;
+
     type B = Flex;
     type Device = FlexDevice;
 
@@ -192,15 +172,20 @@ mod tests {
     fn test_config() -> FastViT3DConfig {
         FastViT3DConfig {
             embed_dim: EMBED_DIM,
-            num_heads: NUM_HEADS,
             num_encoders: NUM_ENCODERS,
             hidden_dim: HIDDEN_DIM,
             dropout: DROPOUT,
-            sinkhorn_temp: SINKHORN_TEMP,
             activation: "gelu".to_string(),
             num_centers: NUM_CENTERS,
             k_neighbours: K_NEIGHBOURS,
             density_radius: DENSITY_RADIUS,
+            mix_layer: AttentionConfig::StochasticWindow(StochasticWindowMixerConfig::new(
+                EMBED_DIM,
+                NUM_CENTERS,
+                NUM_HEADS,
+                3,
+                SINKHORN_TEMP,
+            )),
         }
     }
 

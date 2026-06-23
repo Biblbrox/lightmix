@@ -12,10 +12,11 @@ use burn::{
 use serde::Deserialize;
 
 use crate::{
+    attention::AttentionConfig,
     data::batch::Batch,
     embeddings::vit::{PatchEmbedding, PatchEmbeddingConfig},
     encoders::fast_encoder::{FastEncoder, FastEncoderConfig},
-    models::ModelConfig,
+    models::{ModelConfig, TrainConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
 
@@ -32,13 +33,12 @@ pub struct FastViT<B: Backend> {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FastViTConfig {
     pub embed_dim: usize,
-    pub num_heads: usize,
     pub num_encoders: usize,
     pub patch_size: usize,
     pub hidden_dim: usize,
     pub dropout: f64,
-    pub sinkhorn_temp: f32,
     pub activation: String,
+    pub mix_layer: AttentionConfig,
 }
 
 impl<B: Backend> FastViT<B> {
@@ -48,6 +48,19 @@ impl<B: Backend> FastViT<B> {
         let x = self.layer_norm.forward(x);
 
         self.linear.forward(x.mean_dim(1)).squeeze()
+    }
+
+    pub fn forward_classification(
+        &self,
+        images: Tensor<B, 4>,
+        targets: Tensor<B, 1, Int>,
+    ) -> ClassificationOutput<B> {
+        let output = self.forward(images);
+        let loss = CrossEntropyLossConfig::new()
+            .init(&output.device())
+            .forward(output.clone(), targets.clone());
+
+        ClassificationOutput::new(loss, output, targets)
     }
 }
 
@@ -76,13 +89,11 @@ impl FastViTConfig {
 
             encoder: FastEncoderConfig::new(
                 self.num_encoders,
-                grid_size,
                 num_patches,
                 self.embed_dim,
-                self.num_heads,
                 self.hidden_dim,
                 self.dropout,
-                self.sinkhorn_temp,
+                self.mix_layer.clone(),
             )
             .init(device),
             layer_norm: DynamicERFConfig::new(self.embed_dim).init(device),
@@ -94,8 +105,8 @@ impl FastViTConfig {
 
     pub fn model_name(&self) -> String {
         format!(
-            "fast_vit-head{}-hid{}-emb{}-enc{}-temp{}",
-            self.num_heads, self.hidden_dim, self.embed_dim, self.num_encoders, self.sinkhorn_temp
+            "fast_vit-hid{}-emb{}-enc{}",
+            self.hidden_dim, self.embed_dim, self.num_encoders
         )
     }
 }
@@ -104,39 +115,22 @@ impl<B: Backend> ModelConfig<B> for FastViTConfig {
     type TrainModel = FastViT<Autodiff<B>>;
     type ValidModel = FastViT<B>;
 
-    fn init_training(
-        &self,
-        device: &B::Device,
-        in_channels: usize,
-        image_size: usize,
-        num_classes: usize,
-    ) -> Self::TrainModel {
-        self.init(device, in_channels, image_size, num_classes)
+    fn init_training(&self, device: &B::Device, config: &TrainConfig) -> Self::TrainModel {
+        self.init(
+            device,
+            config.in_channels,
+            config.image_size,
+            config.num_classes,
+        )
     }
 
-    fn init_inference(
-        &self,
-        device: &B::Device,
-        in_channels: usize,
-        image_size: usize,
-        num_classes: usize,
-    ) -> Self::ValidModel {
-        self.init(device, in_channels, image_size, num_classes)
-    }
-}
-
-impl<B: Backend> FastViT<B> {
-    pub fn forward_classification(
-        &self,
-        images: Tensor<B, 4>,
-        targets: Tensor<B, 1, Int>,
-    ) -> ClassificationOutput<B> {
-        let output = self.forward(images);
-        let loss = CrossEntropyLossConfig::new()
-            .init(&output.device())
-            .forward(output.clone(), targets.clone());
-
-        ClassificationOutput::new(loss, output, targets)
+    fn init_inference(&self, device: &B::Device, config: &TrainConfig) -> Self::ValidModel {
+        self.init(
+            device,
+            config.in_channels,
+            config.image_size,
+            config.num_classes,
+        )
     }
 }
 
@@ -181,6 +175,8 @@ mod tests {
         tensor::Shape,
     };
 
+    use crate::attention::stochasticwindowmixer::StochasticWindowMixerConfig;
+
     type B = Flex;
     type Device = FlexDevice;
 
@@ -194,18 +190,23 @@ mod tests {
     const BATCH_SIZE: usize = 10;
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
-    const SINKHORN_TEMP: f64 = 0.05;
+    const SINKHORN_TEMP: f32 = 0.05;
 
     fn test_config() -> FastViTConfig {
         FastViTConfig {
             embed_dim: EMBED_DIM,
-            num_heads: NUM_HEADS,
             num_encoders: NUM_ENCODERS,
             patch_size: PATCH_SIZE,
             hidden_dim: HIDDEN_DIM,
             dropout: DROPOUT,
-            sinkhorn_temp: SINKHORN_TEMP as f32,
             activation: "gelu".to_string(),
+            mix_layer: AttentionConfig::StochasticWindow(StochasticWindowMixerConfig::new(
+                EMBED_DIM,
+                (IMG_SIZE / PATCH_SIZE).pow(2),
+                NUM_HEADS,
+                3,
+                SINKHORN_TEMP,
+            )),
         }
     }
 
