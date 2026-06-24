@@ -132,7 +132,7 @@ pub fn run_experiment<B: Backend>(config: ParsedConfig, device: B::Device) {
 
     let dataset_path = PathBuf::from(&shared.cache_dir).join(&dataset_name);
     if !dataset_path.exists() {
-        eprintln!("Dataset path {} doesn't exist", dataset_path.display());
+        panic!("Dataset path {} doesn't exist", dataset_path.display());
     }
     let dataset_path = dataset_path.to_str().unwrap();
 
@@ -310,7 +310,7 @@ pub fn train<B: Backend>(
         }
 
         let model_valid = model.valid();
-        let num_val_iterations = dataloader_val.num_items() / dataset_cfg.batch_size;
+        let num_val_iterations = dataloader_val.num_items() / dataset_cfg.val_batch_size;
 
         for (iteration, batch) in dataloader_val.iter().enumerate() {
             if interrupter.should_stop() {

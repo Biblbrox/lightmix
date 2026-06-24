@@ -3,7 +3,6 @@
 use std::{fs::File, io::Write, panic, path::PathBuf};
 
 use burn::tensor::backend::Backend;
-use burn::tensor::bf16;
 use lightmix::models::efficientvit::EfficientViTConfig;
 use lightmix::models::fast_vit::FastViTConfig;
 use lightmix::models::fast_vit3d::FastViT3DConfig;
@@ -61,7 +60,7 @@ pub fn run_info<B: Backend>(config: ParsedConfig, device: B::Device) {
 }
 
 fn main() {
-    type MyBackend = burn::backend::cuda::Cuda<bf16, i16>;
+    type MyBackend = burn::backend::cuda::Cuda<f32, i32>;
     let device = burn::backend::cuda::CudaDevice::default();
 
     let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../configs");

@@ -16,7 +16,7 @@ pub enum StochasticMode {
 
 impl Default for StochasticMode {
     fn default() -> Self {
-        Self::Q
+        Self::Qk
     }
 }
 
