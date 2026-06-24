@@ -16,7 +16,7 @@ pub enum StochasticMode {
 
 impl Default for StochasticMode {
     fn default() -> Self {
-        Self::Qk
+        Self::Q
     }
 }
 
@@ -245,7 +245,6 @@ impl StochasticWindowMixerConfig {
             k_mat: init_logits(),
             v_mat: init_logits(),
             dk,
-            //inv_scale: 1.0 / ((dk as f32).sqrt() * self.temperature),
             inv_scale: 1.0 / (dk as f32).sqrt(),
             window_indices: window_indices.clone().reshape([n * window]),
             stoch_mode: self.stoch_mode.clone(),
