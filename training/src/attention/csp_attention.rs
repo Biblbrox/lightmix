@@ -9,7 +9,7 @@ use burn::{
 #[derive(Config, Debug)]
 pub struct CspConfig {
     pub d_model: usize,
-    pub seq_len: usize,
+    pub seq_length: usize,
     pub group_size: usize,
     #[config(default = 1.0)]
     pub temperature: f32,
@@ -23,39 +23,39 @@ pub struct Csp<B: Backend> {
     shift_idx: Tensor<B, 3, Int>,
 
     d_model: usize,
-    seq_len: usize,
+    seq_length: usize,
     group_size: usize,
     temperature: f32,
 }
 
-fn build_shift_idx<B: Backend>(seq_len: usize, d_model: usize) -> Tensor<B, 3, Int> {
-    let mut idx = Vec::with_capacity(seq_len * d_model);
+fn build_shift_idx<B: Backend>(seq_length: usize, d_model: usize) -> Tensor<B, 3, Int> {
+    let mut idx = Vec::with_capacity(seq_length * d_model);
 
-    for t in 0..seq_len {
+    for t in 0..seq_length {
         for c in 0..d_model {
-            let shift = ((c + 1) * (c + 1) - 1) % seq_len;
-            idx.push(((t + shift) % seq_len) as i64);
+            let shift = ((c + 1) * (c + 1) - 1) % seq_length;
+            idx.push(((t + shift) % seq_length) as i64);
         }
     }
 
-    let data = TensorData::new(idx, &[1, d_model, seq_len]);
+    let data = TensorData::new(idx, &[1, d_model, seq_length]);
     Tensor::<B, 3, Int>::from(data)
 }
 
 impl CspConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> Csp<B> {
         assert!(self.d_model > 0, "d_model must be > 0");
-        assert!(self.seq_len > 0, "seq_len must be > 0");
+        assert!(self.seq_length > 0, "seq_len must be > 0");
         assert!(self.group_size > 0, "group_size must be > 0");
 
-        let shift_idx = build_shift_idx(self.seq_len, self.d_model);
+        let shift_idx = build_shift_idx(self.seq_length, self.d_model);
         let d = self.d_model;
 
         Csp {
             v_proj: LinearConfig::new(d, d).with_bias(false).init(device),
             out_proj: LinearConfig::new(d, d).with_bias(true).init(device),
             d_model: self.d_model,
-            seq_len: self.seq_len,
+            seq_length: self.seq_length,
             group_size: self.group_size,
             temperature: self.temperature,
             shift_idx,

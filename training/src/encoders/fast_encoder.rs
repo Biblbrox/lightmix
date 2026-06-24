@@ -9,7 +9,7 @@ use burn::{
 };
 
 use crate::{
-    attention::stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
+    attention::{AttentionConfig, AttentionLayer},
     linear::{LinearLayer, monarch::MonarchLinearConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
@@ -108,7 +108,7 @@ impl<B: Backend> TokenMerger<B> {
 pub struct FastEncoderLayer<B: Backend> {
     linear1: LinearLayer<B>,
     linear2: LinearLayer<B>,
-    mix_layer: StochasticWindowMixer<B>,
+    mix_layer: AttentionLayer<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
     dropout: Dropout,
@@ -122,17 +122,13 @@ pub struct FastEncoderLayer<B: Backend> {
 pub struct FastEncoderLayerConfig {
     seq_length: usize,
     embed_dim: usize,
-    num_heads: usize,
     hidden_dim: usize,
     dropout: f64,
     #[config(default = 0.0)]
     drop_path_prob: f64,
-    encoder: usize,
-    sinkhorn_temp: f32,
     #[config(default = true)]
     use_monarch: bool,
-    grid_h: usize,
-    grid_w: usize,
+    mix_layer: AttentionConfig,
 }
 
 #[derive(Module, Debug)]
@@ -144,13 +140,11 @@ pub struct FastEncoder<B: Backend> {
 #[derive(Config, Debug)]
 pub struct FastEncoderConfig {
     num_layers: usize,
-    grid_size: usize,
     seq_length: usize,
     embed_dim: usize,
-    num_heads: usize,
     hid_dim: usize,
     dropout: f64,
-    sinkhorn_temp: f32,
+    mix_layer: AttentionConfig,
 }
 
 impl<B: Backend> FastEncoderLayer<B> {
@@ -191,14 +185,7 @@ impl FastEncoderLayerConfig {
         FastEncoderLayer {
             linear1: make_linear(self.embed_dim, self.hidden_dim),
             linear2: make_linear(self.hidden_dim, self.embed_dim),
-            mix_layer: StochasticWindowMixerConfig::new(
-                self.embed_dim,
-                self.seq_length,
-                self.num_heads,
-                3,
-                self.sinkhorn_temp,
-            )
-            .init(device),
+            mix_layer: self.mix_layer.init(device),
             norm1: DynamicERFConfig::new(self.embed_dim).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
@@ -237,19 +224,14 @@ impl FastEncoderConfig {
         let seq_length = self.seq_length.next_power_of_two();
 
         for i in 0..self.num_layers {
-            //let layer_seq = (seq_length >> i).max(1);
             let layer_seq = seq_length;
             layers.push(
                 FastEncoderLayerConfig::new(
                     layer_seq,
                     self.embed_dim,
-                    self.num_heads,
                     self.hid_dim,
                     self.dropout,
-                    i,
-                    self.sinkhorn_temp,
-                    self.grid_size,
-                    self.grid_size,
+                    self.mix_layer.clone(),
                 )
                 .with_drop_path_prob(((i + 1) as f64 / self.num_layers as f64) * 0.1)
                 .with_use_monarch(false)

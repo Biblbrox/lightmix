@@ -146,4 +146,4 @@ define_image_batcher!(FashionMnistBatcher, 28, 28, 3, "image", "label");
 define_image_batcher!(Food101Batcher, 96, 96, 3, "image", "label");
 define_image_batcher!(ImageNet1kBatcher, 224, 224, 3, "image", "label");
 define_image_batcher!(MnistBatcher, 28, 28, 1, "image", "label");
-define_image_batcher!(TinyImageNetBatcher, 64, 64, 1, "image", "label");
+define_image_batcher!(TinyImageNetBatcher, 64, 64, 3, "image", "label");
