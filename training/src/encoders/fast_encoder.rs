@@ -9,7 +9,7 @@ use burn::{
 };
 
 use crate::{
-    attention::{AttentionConfig, AttentionLayer},
+    attention::stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
     linear::{LinearLayer, monarch::MonarchLinearConfig},
     norm::{DynamicERF, DynamicERFConfig},
 };
@@ -108,7 +108,7 @@ impl<B: Backend> TokenMerger<B> {
 pub struct FastEncoderLayer<B: Backend> {
     linear1: LinearLayer<B>,
     linear2: LinearLayer<B>,
-    mix_layer: AttentionLayer<B>,
+    mix_layer: StochasticWindowMixer<B>,
     norm1: DynamicERF<B>,
     norm2: DynamicERF<B>,
     dropout: Dropout,
@@ -128,7 +128,7 @@ pub struct FastEncoderLayerConfig {
     drop_path_prob: f64,
     #[config(default = true)]
     use_monarch: bool,
-    mix_layer: AttentionConfig,
+    nhead: usize,
 }
 
 #[derive(Module, Debug)]
@@ -144,7 +144,7 @@ pub struct FastEncoderConfig {
     embed_dim: usize,
     hid_dim: usize,
     dropout: f64,
-    mix_layer: AttentionConfig,
+    nhead: usize,
 }
 
 impl<B: Backend> FastEncoderLayer<B> {
@@ -185,7 +185,14 @@ impl FastEncoderLayerConfig {
         FastEncoderLayer {
             linear1: make_linear(self.embed_dim, self.hidden_dim),
             linear2: make_linear(self.hidden_dim, self.embed_dim),
-            mix_layer: self.mix_layer.init(device),
+            mix_layer: StochasticWindowMixerConfig::new(
+                self.embed_dim,
+                self.seq_length,
+                self.nhead,
+                3,
+                0.05,
+            )
+            .init(device),
             norm1: DynamicERFConfig::new(self.embed_dim).init(device),
             norm2: DynamicERFConfig::new(self.embed_dim).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),
@@ -231,7 +238,7 @@ impl FastEncoderConfig {
                     self.embed_dim,
                     self.hid_dim,
                     self.dropout,
-                    self.mix_layer.clone(),
+                    self.nhead,
                 )
                 .with_drop_path_prob(((i + 1) as f64 / self.num_layers as f64) * 0.1)
                 .with_use_monarch(false)

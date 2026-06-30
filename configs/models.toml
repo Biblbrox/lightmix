@@ -2,8 +2,8 @@
 patch_size = 16
 dropout = 0.001
 hidden_dim = 512
-num_heads = 3
-embed_dim = 192
+nheads = 3
+dmodel = 192
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -13,8 +13,8 @@ num_encoders = 8
 patch_size = 16
 dropout = 0.001
 hidden_dim = 768
-num_heads = 3
-embed_dim = 192
+nheads = 3
+dmodel = 192
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -24,8 +24,8 @@ num_encoders = 12
 patch_size = 16
 dropout = 0.001
 hidden_dim = 1536
-num_heads = 6
-embed_dim = 384
+nheads = 6
+dmodel = 384
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -35,8 +35,8 @@ num_encoders = 12
 patch_size = 16
 dropout = 0.001
 hidden_dim = 3072
-num_heads = 12
-embed_dim = 768
+nheads = 12
+dmodel = 768
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -46,8 +46,8 @@ num_encoders = 12
 patch_size = 16
 dropout = 0.001
 hidden_dim = 4096
-num_heads = 16
-embed_dim = 1024
+nheads = 16
+dmodel = 1024
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -57,8 +57,8 @@ num_encoders = 24
 patch_size = 16
 dropout = 0.001
 hidden_dim = 5120
-num_heads = 16
-embed_dim = 1280
+nheads = 16
+dmodel = 1280
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
@@ -68,117 +68,82 @@ num_encoders = 32
 patch_size = 16
 dropout = 0.001
 hidden_dim = 64
-num_heads = 3
-embed_dim = 32
+nheads = 3
+dmodel = 32
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 3
 
-[fast_vit_nano.mix_layer]
-type = "SelfAttention"
-d_model = 32
-n_heads = 3
-
 [fast_vit_micro]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 512
-num_heads = 3
-embed_dim = 192
+nheads = 3
+dmodel = 192
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 6
 
-[fast_vit_micro.mix_layer]
-type = "SelfAttention"
-d_model = 192
-n_heads = 3
-
 [fast_vit_tiny]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 768
-num_heads = 3
-embed_dim = 192
+nheads = 3
+dmodel = 192
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 12
-
-[fast_vit_tiny.mix_layer]
-type = "SelfAttention"
-d_model = 192
-n_heads = 3
 
 [fast_vit_small]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 1536
-num_heads = 6
-embed_dim = 384
+nheads = 6
+dmodel = 384
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 12
-
-[fast_vit_small.mix_layer]
-type = "SelfAttention"
-d_model = 384
-n_heads = 6
 
 [fast_vit_base]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 3072
-num_heads = 12
-embed_dim = 768
+nheads = 12
+dmodel = 768
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 12
 
-[fast_vit_base.mix_layer]
-type = "SelfAttention"
-d_model = 768
-n_heads = 12
-
 [fast_vit_large]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 4096
-num_heads = 16
-embed_dim = 1024
+nheads = 16
+dmodel = 1024
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 24
 
-[fast_vit_large.mix_layer]
-type = "SelfAttention"
-d_model = 1024
-n_heads = 16
-
 [fast_vit_huge]
 patch_size = 16
 dropout = 0.001
 hidden_dim = 5120
-num_heads = 16
-embed_dim = 1280
+nheads = 16
+dmodel = 1280
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 32
 
-[fast_vit_huge.mix_layer]
-type = "SelfAttention"
-d_model = 1280
-n_heads = 16
-
 [fast_vit_cloud_nano]
-embed_dim = 32
-num_heads = 3
+dmodel = 32
+nheads = 3
 num_encoders = 3
 hidden_dim = 64
 dropout = 0.001
@@ -189,14 +154,9 @@ density_radius = 0.5
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 
-[fast_vit_cloud_nano.mix_layer]
-type = "SelfAttention"
-d_model = 32
-n_heads = 3
-
 [fast_vit_cloud_tiny]
-embed_dim = 192
-num_heads = 3
+dmodel = 192
+nheads = 3
 num_encoders = 6
 hidden_dim = 768
 dropout = 0.001
@@ -207,14 +167,9 @@ density_radius = 0.5
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 
-[fast_vit_cloud_tiny.mix_layer]
-type = "SelfAttention"
-d_model = 192
-n_heads = 3
-
 [fast_vit_cloud_small]
-embed_dim = 384
-num_heads = 6
+dmodel = 384
+nheads = 6
 num_encoders = 12
 hidden_dim = 1536
 dropout = 0.001
@@ -225,14 +180,9 @@ density_radius = 0.5
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
 
-[fast_vit_cloud_small.mix_layer]
-type = "SelfAttention"
-d_model = 384
-n_heads = 6
-
 [fast_vit_cloud_base]
-embed_dim = 768
-num_heads = 12
+dmodel = 768
+nheads = 12
 num_encoders = 12
 hidden_dim = 3072
 dropout = 0.001
@@ -242,11 +192,6 @@ k_neighbours = 16
 density_radius = 0.5
 adam_weight_decay = 0.01
 adam_betas = [0.9, 0.999]
-
-[fast_vit_cloud_base.mix_layer]
-type = "SelfAttention"
-d_model = 768
-n_heads = 12
 
 [efficientvit_m0]
 image_size = 224

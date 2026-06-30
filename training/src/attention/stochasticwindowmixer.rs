@@ -7,14 +7,21 @@ use burn::{
 use crate::attention::{NormalizationMode, sinkhorn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum StochasticMode {
+pub enum StochasticSelect {
     Q,
     K,
     Qk,
     Qkv,
+    None,
 }
 
-impl Default for StochasticMode {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum StochasticMul {
+    Sinkhorn,
+    Softmax,
+}
+
+impl Default for StochasticSelect {
     fn default() -> Self {
         Self::Qk
     }
@@ -32,40 +39,49 @@ impl Default for SelectMethod {
     }
 }
 
+impl Default for StochasticMul {
+    fn default() -> Self {
+        Self::Sinkhorn
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StochasticWindowMixerConfig {
     pub embed_dim: usize,
     pub seq_length: usize,
-    pub num_heads: usize,
+    pub nhead: usize,
     pub kernel_size: usize,
     pub temperature: f32,
     #[serde(default)]
-    pub stoch_mode: StochasticMode,
+    pub stoch_mode: StochasticSelect,
     // This parameter describes whether matrices should be normalized by rows only
     // (stochastic) or rows and columns (double stochastic).
     #[serde(default)]
     pub norm_mode: NormalizationMode,
     #[serde(default)]
     pub select_mode: SelectMethod,
+    #[serde(default)]
+    pub mul_mode: StochasticMul,
 }
 
 impl StochasticWindowMixerConfig {
     pub fn new(
         embed_dim: usize,
         seq_length: usize,
-        num_heads: usize,
+        nhead: usize,
         kernel_size: usize,
         temperature: f32,
     ) -> Self {
         Self {
             embed_dim,
             seq_length,
-            num_heads,
+            nhead,
             kernel_size,
             temperature,
-            stoch_mode: StochasticMode::default(),
+            stoch_mode: StochasticSelect::default(),
             norm_mode: NormalizationMode::default(),
             select_mode: SelectMethod::default(),
+            mul_mode: StochasticMul::default(),
         }
     }
 }
@@ -79,12 +95,13 @@ pub struct StochasticWindowMixer<B: Backend> {
     band_bias: Param<Tensor<B, 5>>, // [H, N, 2w+1]
     temperature: f32,
     half_width: usize,
-    num_heads: usize,
+    nhead: usize,
     dk: usize,
     window_indices: Tensor<B, 1, Int>, // [N * bw]
-    stoch_mode: StochasticMode,
+    stoch_mode: StochasticSelect,
     norm_mode: NormalizationMode,
     select_mode: SelectMethod,
+    mul_mode: StochasticMul,
     seq_length: usize,
 }
 
@@ -107,26 +124,27 @@ impl<B: Backend> StochasticWindowMixer<B> {
     fn calc_qkv_soft(&self) -> (Tensor<B, 4>, Tensor<B, 4>, Tensor<B, 4>) {
         let t = self.temperature;
         match self.stoch_mode {
-            StochasticMode::Q => (
+            StochasticSelect::Q => (
                 sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
                 self.k_mat.val(),
                 self.v_mat.val(),
             ),
-            StochasticMode::K => (
+            StochasticSelect::K => (
                 self.q_mat.val(),
                 sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
                 self.v_mat.val(),
             ),
-            StochasticMode::Qk => (
+            StochasticSelect::Qk => (
                 sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
                 sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
                 self.v_mat.val(),
             ),
-            StochasticMode::Qkv => (
+            StochasticSelect::Qkv => (
                 sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
                 sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
                 sinkhorn(self.v_mat.val(), t, self.norm_mode.clone()),
             ),
+            StochasticSelect::None => (self.q_mat.val(), self.k_mat.val(), self.v_mat.val()),
         }
     }
 
@@ -141,23 +159,28 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let apply_linear = |mat: Tensor<B, 4>| -> Tensor<B, 4> { x.clone().matmul(mat) };
 
         match self.stoch_mode.clone() {
-            StochasticMode::Q => (
+            StochasticSelect::Q => (
                 apply_stochastic(q).unsqueeze_dim(3),
                 self.local_window(apply_linear(k)),
                 self.local_window(apply_linear(v)),
             ),
-            StochasticMode::K => (
+            StochasticSelect::K => (
                 apply_linear(q).unsqueeze_dim(3),
                 self.local_window(apply_stochastic(k)),
                 self.local_window(apply_linear(v)),
             ),
-            StochasticMode::Qk => (
+            StochasticSelect::Qk => (
                 apply_stochastic(q).unsqueeze_dim(3),
                 self.local_window(apply_stochastic(k)),
                 self.local_window(apply_linear(v)),
             ),
-            StochasticMode::Qkv => (
+            StochasticSelect::Qkv => (
                 apply_stochastic(q).unsqueeze_dim(3),
+                self.local_window(apply_stochastic(k)),
+                self.local_window(apply_stochastic(v)),
+            ),
+            StochasticSelect::None => (
+                self.local_window(apply_stochastic(q)),
                 self.local_window(apply_stochastic(k)),
                 self.local_window(apply_stochastic(v)),
             ),
@@ -171,16 +194,23 @@ impl<B: Backend> StochasticWindowMixer<B> {
         }
     }
 
+    fn calc_scores(&self, q: Tensor<B, 5>, k_win: Tensor<B, 5>) -> Tensor<B, 5> {
+        let scores = q.matmul(k_win) * self.inv_scale + self.band_bias.val();
+        match self.mul_mode {
+            StochasticMul::Softmax => softmax(scores, 4),
+            StochasticMul::Sinkhorn => sinkhorn(scores, self.temperature, self.norm_mode),
+        } // [B,N,H,1,bw]
+    }
+
     pub fn forward_hard(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [b, n, e] = x.dims();
         let dk = self.dk;
-        let h = self.num_heads;
+        let h = self.nhead;
 
         let x = x.reshape([b, n, h, dk]);
 
         let (q, k, v) = self.calc_qkv_hard(x);
-        let scores = q.matmul(k) * self.inv_scale + self.band_bias.val();
-        let p = softmax(scores, 4);
+        let p = self.calc_scores(q, k);
         let out = v.matmul(p.transpose());
 
         out.reshape([b, n, e])
@@ -189,7 +219,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
     pub fn forward_soft(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [b, n, e] = x.dims();
         let dk = self.dk;
-        let h = self.num_heads;
+        let h = self.nhead;
 
         let x = x.reshape([b, n, h, dk]);
 
@@ -198,11 +228,11 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let k = x.clone().matmul(w_k); // [B,N,H,dk]
         let v = x.matmul(w_v); // [B,N,H,dk]
 
-        let k_win = self.local_window(k); // [B,N,H,dk,bw]
-        let scores = q.matmul(k_win) * self.inv_scale + self.band_bias.val();
-        let p = softmax(scores, 4); // [B,N,H,1,bw]
-        let v_win = self.local_window(v); // [B,N,H,dk,bw]
-        let out = v_win.matmul(p.transpose()); // [B,N,H,dk,1]
+        let k = self.local_window(k); // [B,N,H,dk,bw]
+        let v = self.local_window(v); // [B,N,H,dk,bw]
+        let p = self.calc_scores(q, k); // [B,N,H,1,bw]
+
+        let out = v.matmul(p.transpose()); // [B,N,H,dk,1]
 
         out.reshape([b, n, e])
     }
@@ -212,7 +242,7 @@ impl StochasticWindowMixerConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> StochasticWindowMixer<B> {
         let w = (self.kernel_size - 1) / 2;
         let window = 2 * w + 1;
-        let dk = self.embed_dim / self.num_heads; // head dim
+        let dk = self.embed_dim / self.nhead; // head dim
         let n = self.seq_length;
 
         let logit_std = (1.0 / dk as f64).sqrt();
@@ -234,13 +264,13 @@ impl StochasticWindowMixerConfig {
 
         StochasticWindowMixer {
             band_bias: Param::from_tensor(Tensor::<B, 5>::zeros(
-                [1, self.seq_length, self.num_heads, 1, window],
+                [1, self.seq_length, self.nhead, 1, window],
                 device,
             ))
             .set_require_grad(true),
             temperature: self.temperature,
             half_width: w,
-            num_heads: self.num_heads,
+            nhead: self.nhead,
             q_mat: init_logits(),
             k_mat: init_logits(),
             v_mat: init_logits(),
@@ -251,6 +281,7 @@ impl StochasticWindowMixerConfig {
             seq_length: self.seq_length,
             norm_mode: self.norm_mode.clone(),
             select_mode: self.select_mode.clone(),
+            mul_mode: self.mul_mode.clone(),
         }
     }
 }

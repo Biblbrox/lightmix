@@ -31,7 +31,11 @@ use crate::{
     augmentations::{Pipeline, builder::AugmentationBuilder},
     config::ParsedConfig,
     data::dataset::{DatasetType, LazyDataset, LazyFiletype},
-    metrics::MetricsHandler,
+    metrics::{
+        MetricsHandler,
+        batchtime::{BatchTimeInput, BatchTimeMetric},
+        throughput::{ThroughputInput, ThroughputMetric},
+    },
     models::{
         ModelConfig, efficientvit::EfficientViTConfig, fast_vit::FastViTConfig,
         fast_vit3d::FastViT3DConfig, vit::ViTConfig,
@@ -70,6 +74,10 @@ pub fn build_metrics<B: Backend>() -> MetricsHandler<B> {
         })
         .add(TopKAccuracyMetric::new(5), |o| {
             TopKAccuracyInput::new(o.output(), o.targets())
+        })
+        .add(BatchTimeMetric::new(), |_| BatchTimeInput {})
+        .add(ThroughputMetric::new(), |o| ThroughputInput {
+            batch_size: o.output().dims()[0],
         })
 }
 
@@ -177,13 +185,12 @@ fn step_metadata(
         items_processed: epoch,
         items_total: total_epochs,
     };
-    let metadata = MetricMetadata {
+    MetricMetadata {
         progress: progress.clone(),
         global_progress: global_progress.clone(),
         iteration: Some(iteration),
         lr: Some(lr),
-    };
-    metadata
+    }
 }
 
 pub fn train<B: Backend>(
@@ -335,7 +342,7 @@ pub fn train<B: Backend>(
 
         let model_path = artifact_dir.join(format!("model-epoch-{epoch}"));
         let optim_path = artifact_dir.join(format!("optim-epoch-{epoch}"));
-        let sched_path = artifact_dir.join(format!("sheduler-epoch-{epoch}"));
+        let sched_path = artifact_dir.join(format!("scheduler-epoch-{epoch}"));
         model
             .clone()
             .save_file(model_path, &recorder)

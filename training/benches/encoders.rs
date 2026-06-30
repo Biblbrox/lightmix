@@ -5,15 +5,11 @@ use burn::{
 };
 use cubecl::benchmark::Benchmark;
 
-use lightmix::attention::AttentionConfig;
 use lightmix::encoders::fast_encoder::{FastEncoder, FastEncoderConfig};
 
 use cubecl::{benchmark::BenchmarkComputations, profile::TimingMethod};
 
-use crate::common::{
-    AttentionVariant, CpuBackend, GpuBackend, generate_run_id, make_attention_config,
-    print_bench_results,
-};
+use crate::common::{CpuBackend, GpuBackend, generate_run_id, print_bench_results};
 mod common;
 
 pub struct FastEncoderBenchmark<B: Backend> {
@@ -23,7 +19,7 @@ pub struct FastEncoderBenchmark<B: Backend> {
     pub num_layers: usize,
     pub hid_dim: usize,
     pub dropout: f64,
-    pub mix_layer: AttentionConfig,
+    pub nhead: usize,
     pub device: B::Device,
 }
 
@@ -44,7 +40,7 @@ impl<B: Backend> Benchmark for FastEncoderBenchmark<B> {
                 self.embed_dim,
                 self.hid_dim,
                 self.dropout,
-                self.mix_layer.clone(),
+                self.nhead,
             )
             .init(&self.device),
         )
@@ -53,7 +49,7 @@ impl<B: Backend> Benchmark for FastEncoderBenchmark<B> {
     fn name(&self) -> String {
         format!(
             "FastEncoder-{:?}x{:?}x{:?} {:?}",
-            self.batch_size, self.seq_length, self.embed_dim, self.mix_layer
+            self.batch_size, self.seq_length, self.embed_dim, self.nhead
         )
         .to_lowercase()
     }
@@ -146,9 +142,9 @@ fn encoders_benchmark_backend<B: Backend>(run_id: &str, backend: &str) {
             embed_dim,
             num_layers,
             hid_dim,
+            nhead: num_heads,
             device: device.clone(),
             dropout,
-            mix_layer,
         };
 
         let bench_res_fast = bench_fast.run(TimingMethod::System).unwrap();

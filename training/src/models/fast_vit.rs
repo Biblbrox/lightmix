@@ -12,7 +12,6 @@ use burn::{
 use serde::Deserialize;
 
 use crate::{
-    attention::AttentionConfig,
     data::batch::Batch,
     embeddings::vit::{PatchEmbedding, PatchEmbeddingConfig},
     encoders::fast_encoder::{FastEncoder, FastEncoderConfig},
@@ -32,13 +31,13 @@ pub struct FastViT<B: Backend> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FastViTConfig {
-    pub embed_dim: usize,
+    pub dmodel: usize,
     pub num_encoders: usize,
     pub patch_size: usize,
     pub hidden_dim: usize,
     pub dropout: f64,
     pub activation: String,
-    pub mix_layer: AttentionConfig,
+    pub nheads: usize,
 }
 
 impl<B: Backend> FastViT<B> {
@@ -78,7 +77,7 @@ impl FastViTConfig {
         FastViT {
             embedding_block: PatchEmbeddingConfig::new(
                 in_channels,
-                self.embed_dim,
+                self.dmodel,
                 self.patch_size,
                 image_size,
                 self.dropout,
@@ -90,14 +89,14 @@ impl FastViTConfig {
             encoder: FastEncoderConfig::new(
                 self.num_encoders,
                 num_patches,
-                self.embed_dim,
+                self.dmodel,
                 self.hidden_dim,
                 self.dropout,
-                self.mix_layer.clone(),
+                self.nheads,
             )
             .init(device),
-            layer_norm: DynamicERFConfig::new(self.embed_dim).init(device),
-            linear: LinearConfig::new(self.embed_dim, num_classes).init(device),
+            layer_norm: DynamicERFConfig::new(self.dmodel).init(device),
+            linear: LinearConfig::new(self.dmodel, num_classes).init(device),
             in_channels,
             image_size,
         }
@@ -106,7 +105,7 @@ impl FastViTConfig {
     pub fn model_name(&self) -> String {
         format!(
             "fast_vit-hid{}-emb{}-enc{}",
-            self.hidden_dim, self.embed_dim, self.num_encoders
+            self.hidden_dim, self.dmodel, self.num_encoders
         )
     }
 }
@@ -175,38 +174,29 @@ mod tests {
         tensor::Shape,
     };
 
-    use crate::attention::stochasticwindowmixer::StochasticWindowMixerConfig;
-
     type B = Flex;
     type Device = FlexDevice;
 
     const IN_CHANNELS: usize = 3;
     const PATCH_SIZE: usize = 4;
     const IMG_SIZE: usize = 32;
-    const EMBED_DIM: usize = PATCH_SIZE.pow(2) * IN_CHANNELS;
+    const DMODEL: usize = PATCH_SIZE.pow(2) * IN_CHANNELS;
     const NUM_HEADS: usize = 8;
     const NUM_ENCODERS: usize = 4;
     const NUM_CLASSES: usize = 10;
     const BATCH_SIZE: usize = 10;
     const HIDDEN_DIM: usize = 64;
     const DROPOUT: f64 = 0.1;
-    const SINKHORN_TEMP: f32 = 0.05;
 
     fn test_config() -> FastViTConfig {
         FastViTConfig {
-            embed_dim: EMBED_DIM,
+            dmodel: DMODEL,
             num_encoders: NUM_ENCODERS,
             patch_size: PATCH_SIZE,
             hidden_dim: HIDDEN_DIM,
             dropout: DROPOUT,
             activation: "gelu".to_string(),
-            mix_layer: AttentionConfig::StochasticWindow(StochasticWindowMixerConfig::new(
-                EMBED_DIM,
-                (IMG_SIZE / PATCH_SIZE).pow(2),
-                NUM_HEADS,
-                3,
-                SINKHORN_TEMP,
-            )),
+            nheads: NUM_HEADS,
         }
     }
 

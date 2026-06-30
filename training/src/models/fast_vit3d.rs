@@ -9,7 +9,6 @@ use burn::{
 use serde::Deserialize;
 
 use crate::{
-    attention::AttentionConfig,
     data::batch::Batch,
     embeddings::cloud::{CloudPatchEmbedding, CloudPatchEmbeddingConfig},
     encoders::fast_encoder::{FastEncoder, FastEncoderConfig},
@@ -32,7 +31,7 @@ pub struct FastViT3D<B: Backend> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FastViT3DConfig {
-    pub embed_dim: usize,
+    pub dmodel: usize,
     pub num_encoders: usize,
     pub hidden_dim: usize,
     pub dropout: f64,
@@ -40,7 +39,7 @@ pub struct FastViT3DConfig {
     pub num_centers: usize,
     pub k_neighbours: usize,
     pub density_radius: f32,
-    pub mix_layer: AttentionConfig,
+    pub nheads: usize,
 }
 
 impl<B: Backend> FastViT3D<B> {
@@ -73,7 +72,7 @@ impl FastViT3DConfig {
                 self.num_centers,
                 self.k_neighbours,
                 self.density_radius,
-                self.embed_dim,
+                self.dmodel,
                 self.dropout,
                 false,
             )
@@ -82,15 +81,15 @@ impl FastViT3DConfig {
             encoder: FastEncoderConfig::new(
                 self.num_encoders,
                 self.num_centers,
-                self.embed_dim,
+                self.dmodel,
                 self.hidden_dim,
                 self.dropout,
-                self.mix_layer.clone(),
+                self.nheads,
             )
             .init(device),
 
-            layer_norm: DynamicERFConfig::new(self.embed_dim).init(device),
-            linear: LinearConfig::new(self.embed_dim, num_classes).init(device),
+            layer_norm: DynamicERFConfig::new(self.dmodel).init(device),
+            linear: LinearConfig::new(self.dmodel, num_classes).init(device),
             num_centers: self.num_centers,
         }
     }
@@ -98,7 +97,7 @@ impl FastViT3DConfig {
     pub fn model_name(&self) -> String {
         format!(
             "fast_vit_cloud-hid{}-emb{}-enc{}-centers{}-kn{}",
-            self.hidden_dim, self.embed_dim, self.num_encoders, self.num_centers, self.k_neighbours
+            self.hidden_dim, self.dmodel, self.num_encoders, self.num_centers, self.k_neighbours
         )
     }
 }
@@ -152,15 +151,13 @@ mod tests {
         tensor::Shape,
     };
 
-    use crate::attention::stochasticwindowmixer::StochasticWindowMixerConfig;
-
     type B = Flex;
     type Device = FlexDevice;
 
     const NUM_CENTERS: usize = 64;
     const K_NEIGHBOURS: usize = 16;
     const DENSITY_RADIUS: f32 = 0.5;
-    const EMBED_DIM: usize = 192;
+    const DMODEL: usize = 192;
     const NUM_HEADS: usize = 3;
     const NUM_ENCODERS: usize = 6;
     const NUM_CLASSES: usize = 40;
@@ -171,7 +168,7 @@ mod tests {
 
     fn test_config() -> FastViT3DConfig {
         FastViT3DConfig {
-            embed_dim: EMBED_DIM,
+            dmodel: DMODEL,
             num_encoders: NUM_ENCODERS,
             hidden_dim: HIDDEN_DIM,
             dropout: DROPOUT,
@@ -179,13 +176,7 @@ mod tests {
             num_centers: NUM_CENTERS,
             k_neighbours: K_NEIGHBOURS,
             density_radius: DENSITY_RADIUS,
-            mix_layer: AttentionConfig::StochasticWindow(StochasticWindowMixerConfig::new(
-                EMBED_DIM,
-                NUM_CENTERS,
-                NUM_HEADS,
-                3,
-                SINKHORN_TEMP,
-            )),
+            nheads: NUM_HEADS,
         }
     }
 

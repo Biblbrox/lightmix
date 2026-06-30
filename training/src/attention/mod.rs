@@ -13,74 +13,6 @@ pub mod staticmixer;
 pub mod stochasticmixer;
 pub mod stochasticwindowmixer;
 
-use crate::attention::{
-    csp_attention::{Csp, CspConfig},
-    learnedmixer::{LearnedPermuter, LearnedPermuterConfig},
-    self_attention::{SelfAttention, SelfAttentionConfig},
-    sinkformer::{SinkformerMixer, SinkformerMixerConfig},
-    staticmixer::{StaticMixer, StaticMixerConfig},
-    stochasticmixer::{StochasticMixer, StochasticMixerConfig},
-    stochasticwindowmixer::{StochasticWindowMixer, StochasticWindowMixerConfig},
-};
-
-/// Unified attention layer enum – all variants share Tensor<B,3> -> Tensor<B,3>.
-#[derive(Module, Debug)]
-pub enum AttentionLayer<B: Backend> {
-    StochasticWindow(StochasticWindowMixer<B>),
-    Sinkformer(SinkformerMixer<B>),
-    Csp(Csp<B>),
-    StochasticMixer(StochasticMixer<B>),
-    StaticMixer(StaticMixer<B>),
-    LearnedPermuter(LearnedPermuter<B>),
-    SelfAttention(SelfAttention<B>),
-}
-
-impl<B: Backend> AttentionLayer<B> {
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        match self {
-            Self::StochasticWindow(m) => m.forward(x),
-            Self::Sinkformer(m) => m.forward(x),
-            Self::Csp(m) => m.forward(x),
-            Self::StochasticMixer(m) => m.forward(x),
-            Self::StaticMixer(m) => m.forward(x),
-            Self::LearnedPermuter(m) => m.forward(x),
-            Self::SelfAttention(m) => m.forward(x),
-        }
-    }
-}
-
-/// Tagged config enum for attention layer selection.
-/// Serializes to TOML as: { type = "StochasticWindow", ...variant_fields... }
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "type")]
-pub enum AttentionConfig {
-    StochasticWindow(StochasticWindowMixerConfig),
-    Sinkformer(SinkformerMixerConfig),
-    Csp(CspConfig),
-    StochasticMixer(StochasticMixerConfig),
-    StaticMixer(StaticMixerConfig),
-    LearnedPermuter(LearnedPermuterConfig),
-    SelfAttention(SelfAttentionConfig),
-}
-
-impl AttentionConfig {
-    pub fn init<B: Backend>(&self, device: &B::Device) -> AttentionLayer<B> {
-        match self {
-            Self::StochasticWindow(cfg) => {
-                AttentionLayer::StochasticWindow(cfg.init(device))
-            }
-            Self::Sinkformer(cfg) => AttentionLayer::Sinkformer(cfg.init(device)),
-            Self::Csp(cfg) => AttentionLayer::Csp(cfg.init(device)),
-            Self::StochasticMixer(cfg) => AttentionLayer::StochasticMixer(cfg.init(device)),
-            Self::StaticMixer(cfg) => AttentionLayer::StaticMixer(cfg.init(device)),
-            Self::LearnedPermuter(cfg) => {
-                AttentionLayer::LearnedPermuter(cfg.init(device))
-            }
-            Self::SelfAttention(cfg) => AttentionLayer::SelfAttention(cfg.init(device)),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NormalizationMode {
     Single,
@@ -93,55 +25,67 @@ impl Default for NormalizationMode {
     }
 }
 
-pub fn sinkhorn<B: Backend>(s: Tensor<B, 4>, temp: f32, mode: NormalizationMode) -> Tensor<B, 4> {
-    match mode {
-        NormalizationMode::Double => Tensor::from_primitive(TensorPrimitive::Float(
-            sinkhorn_double::<B>(s.into_primitive().tensor(), temp),
-        )),
-        NormalizationMode::Single => Tensor::from_primitive(TensorPrimitive::Float(
-            sinkhorn_single::<B>(s.into_primitive().tensor(), temp),
-        )),
-    }
+pub fn sinkhorn<B: Backend, const D: usize>(
+    s: Tensor<B, D>,
+    temp: f32,
+    mode: NormalizationMode,
+) -> Tensor<B, D> {
+    assert!(D >= 2, "sinkhorn requires at least 2 dimensions");
+    let (last, second_last) = (D - 1, D - 2);
+    Tensor::from_primitive(TensorPrimitive::Float(match mode {
+        NormalizationMode::Double => {
+            sinkhorn_double::<B>(s.into_primitive().tensor(), temp, last, second_last)
+        }
+        NormalizationMode::Single => sinkhorn_single::<B>(s.into_primitive().tensor(), temp, last),
+    }))
 }
 
-pub fn sinkhorn_iter<B: Backend>(
-    s: Tensor<B, 4>,
+pub fn sinkhorn_iter<B: Backend, const D: usize>(
+    s: Tensor<B, D>,
     temp: f32,
     iters: usize,
     mode: NormalizationMode,
-) -> Tensor<B, 4> {
+) -> Tensor<B, D> {
+    assert!(D >= 2, "sinkhorn requires at least 2 dimensions");
+    let (last, second_last) = (D - 1, D - 2);
     let mut prim = s.into_primitive().tensor();
     for _i in 0..iters {
         prim = match mode {
-            NormalizationMode::Double => sinkhorn_double::<B>(prim, temp),
-            NormalizationMode::Single => sinkhorn_single::<B>(prim, temp),
+            NormalizationMode::Double => sinkhorn_double::<B>(prim, temp, last, second_last),
+            NormalizationMode::Single => sinkhorn_single::<B>(prim, temp, last),
         }
     }
     Tensor::from_primitive(TensorPrimitive::Float(prim))
 }
 
-/// sinkhorn_double produces double stochastic matrix
-fn sinkhorn_double<B: Backend>(tensor: FloatTensor<B>, temp: f32) -> FloatTensor<B> {
+/// produces a doubly-stochastic matrix over (second_last, last)
+fn sinkhorn_double<B: Backend>(
+    tensor: FloatTensor<B>,
+    temp: f32,
+    last: usize,
+    second_last: usize,
+) -> FloatTensor<B> {
     let tensor = B::float_div_scalar(tensor, burn::tensor::Scalar::Float(temp as f64));
-    let max = B::float_max_dim(B::float_detach(tensor.clone()), 3);
+    let max = B::float_max_dim(B::float_detach(tensor.clone()), last);
     let shifted = B::float_sub(tensor, max);
     let exp = B::float_exp(shifted);
-    let sum = B::float_sum_dim(exp.clone(), 3);
+    let sum = B::float_sum_dim(exp.clone(), last);
     let tensor = B::float_div(exp, sum);
-    let max = B::float_max_dim(B::float_detach(tensor.clone()), 2);
+
+    let max = B::float_max_dim(B::float_detach(tensor.clone()), second_last);
     let shifted = B::float_sub(tensor, max);
     let exp = B::float_exp(shifted);
-    let sum = B::float_sum_dim(exp.clone(), 2);
+    let sum = B::float_sum_dim(exp.clone(), second_last);
     B::float_div(exp, sum)
 }
 
-/// sinkhorn_single produces row-stochastic matrix
-fn sinkhorn_single<B: Backend>(tensor: FloatTensor<B>, temp: f32) -> FloatTensor<B> {
+/// produces a row-stochastic matrix over `last`
+fn sinkhorn_single<B: Backend>(tensor: FloatTensor<B>, temp: f32, last: usize) -> FloatTensor<B> {
     let tensor = B::float_div_scalar(tensor, burn::tensor::Scalar::Float(temp as f64));
-    let max = B::float_max_dim(B::float_detach(tensor.clone()), 3);
+    let max = B::float_max_dim(B::float_detach(tensor.clone()), last);
     let shifted = B::float_sub(tensor, max);
     let exp = B::float_exp(shifted);
-    let sum = B::float_sum_dim(exp.clone(), 3);
+    let sum = B::float_sum_dim(exp.clone(), last);
     B::float_div(exp, sum)
 }
 

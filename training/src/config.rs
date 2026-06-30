@@ -142,6 +142,7 @@ impl ParsedConfig {
         let mut model_name = shared.active_model.clone();
 
         // Extract active_dataset/active_model from local_table for section selection
+
         if let Some(ds) = local_table.get("active_dataset").and_then(|v| v.as_str()) {
             dataset_name = ds.to_string();
         }
@@ -404,15 +405,8 @@ adam_weight_decay = 0.0001
 adam_betas = [0.9, 0.999]
 activation = "gelu"
 num_encoders = 6
-embed_dim = 512
-
-[model.mix_layer]
-type = "StochasticWindow"
-embed_dim = 512
-seq_length = 16
-num_heads = 8
-kernel_size = 3
-temperature = 0.1
+nheads = 3
+dmodel = 512
 "#;
         std::fs::write(dir.path().join("models.toml"), models).unwrap();
 
@@ -503,7 +497,7 @@ hidden_dim = 128
         assert_eq!(model.hidden_dim, 256);
         assert_eq!(model.activation, "gelu");
         assert_eq!(model.num_encoders, 6);
-        assert_eq!(model.embed_dim, 512);
+        assert_eq!(model.dmodel, 512);
     }
 
     #[derive(Debug, Clone, serde::Deserialize)]
@@ -571,39 +565,5 @@ hidden_dim = 128
         // Fields not overridden should retain base values
         assert_eq!(dataset.num_classes, 10);
         assert_eq!(model.patch_size, 7);
-    }
-
-    #[test]
-    fn test_override_adds_new_fields() {
-        let dir = create_test_config();
-        let config_dir = &dir.path();
-
-        // Create a local file that only overrides specific fields
-        let local_content = r#"
-[mnist]
-batch_size = 16
-
-[model.mix_layer]
-num_heads = 4
-"#;
-        let local_path = dir.path().join("experiments.local.toml");
-        std::fs::write(&local_path, local_content).unwrap();
-
-        let config = ParsedConfig::load(config_dir, Some(&local_path));
-        let (_, dataset, model_table) = config.unpack();
-        let model: FastViTConfig = model_table.try_into().unwrap();
-
-        assert_eq!(dataset.batch_size, 16);
-        // Verify mix_layer num_heads was overridden to 4
-        match &model.mix_layer {
-            crate::attention::AttentionConfig::StochasticWindow(cfg) => {
-                assert_eq!(cfg.num_heads, 4);
-            }
-            _ => panic!("Expected StochasticWindow attention"),
-        }
-
-        // Unchanged fields should retain base values
-        assert_eq!(dataset.num_classes, 10);
-        assert_eq!(model.embed_dim, 512);
     }
 }
