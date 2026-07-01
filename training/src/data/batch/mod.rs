@@ -24,7 +24,7 @@ impl<B: Backend> Batch<B> {
         let mut rng = fastrand::Rng::with_seed(seed);
         for i in (1..b as i32).rev() {
             let j = rng.usize(0..=(i as usize));
-            indices.swap(i as usize, j as usize);
+            indices.swap(i as usize, j);
         }
         let idx = Tensor::<B, 1, Int>::from_ints(indices.as_slice(), &device);
         Self {
@@ -142,7 +142,7 @@ macro_rules! define_image_batcher {
 
 define_image_batcher!(Cifar10Batcher, 32, 32, 3, "image", "label");
 define_image_batcher!(Cifar100Batcher, 32, 32, 3, "image", "label");
-define_image_batcher!(FashionMnistBatcher, 28, 28, 3, "image", "label");
+define_image_batcher!(FashionMnistBatcher, 28, 28, 1, "image", "label");
 define_image_batcher!(Food101Batcher, 96, 96, 3, "image", "label");
 define_image_batcher!(ImageNet1kBatcher, 224, 224, 3, "image", "label");
 define_image_batcher!(MnistBatcher, 28, 28, 1, "image", "label");

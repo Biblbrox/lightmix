@@ -5,24 +5,24 @@ edition = "2024"
 
 [dependencies]
 burn = { version = "0.21.0", features = [
-  "fusion",
-  "std",
-  "cuda",
-  "train",
-  "tui",
-  "flex",
+    "fusion",
+    "std",
+    "cuda",
+    "train",
+    "tui",
+    "flex",
 ], default-features = false }
 polars = { version = "0.54.4", features = [
-  "async",
-  "parquet",
-  "lazy",
-  "ipc",
-  "performant",
+    "async",
+    "parquet",
+    "lazy",
+    "ipc",
+    "performant",
 ], default-features = false }
 toml = { version = "1.1.2", default-features = false, features = ["parse"] }
 image = { version = "0.25.10", default-features = false, features = [
-  "jpeg",
-  "png",
+    "jpeg",
+    "png",
 ], optional = true }
 tikv-jemallocator = { version = "0.7.0", optional = true }
 fastrand = "2"
@@ -37,9 +37,12 @@ in_memory_loader = []
 
 [dev-dependencies]
 tempfile = "3.27.0"
-indicatif = { version = "0.18.4", default-features = false }
+indicatif = { version = "0.18.5", default-features = false }
 cubecl = { version = "0.10.0", features = ["cuda"] }
-polars = { version = "0.54.4", features = ["parquet", "lazy"], default-features = false }
+polars = { version = "0.54.4", features = [
+    "parquet",
+    "lazy",
+], default-features = false }
 
 [[bench]]
 name = "embeddings"

@@ -1,6 +1,5 @@
 use burn::{
     Tensor,
-    module::Module,
     tensor::{TensorPrimitive, backend::Backend, ops::FloatTensor},
 };
 
@@ -13,16 +12,11 @@ pub mod staticmixer;
 pub mod stochasticmixer;
 pub mod stochasticwindowmixer;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum NormalizationMode {
     Single,
+    #[default]
     Double,
-}
-
-impl Default for NormalizationMode {
-    fn default() -> Self {
-        Self::Double
-    }
 }
 
 pub fn sinkhorn<B: Backend, const D: usize>(

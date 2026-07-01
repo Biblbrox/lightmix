@@ -42,7 +42,7 @@ std = [0.2675, 0.2565, 0.2761]
 
 [fashionmnist]
 augmentation_pipeline = "image"
-transforms = ["normalize", "random_flip"]
+transforms = ["normalize"]
 batch_size = 64
 val_batch_size = 128
 epochs = 100

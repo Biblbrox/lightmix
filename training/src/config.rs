@@ -252,18 +252,28 @@ impl ParsedConfig {
 
         let overrides: HashMap<String, toml::Value> = section
             .get("augmentations")
-            .and_then(|v| v.as_table())
-            .map(|table| {
-                table
-                    .iter()
-                    .filter_map(|(k, v)| {
-                        if v.is_table() || v.is_array() {
-                            Some((k.clone(), v.clone()))
-                        } else {
-                            None
+            .and_then(|v| match v {
+                toml::Value::Table(table) => Some(table.iter().filter_map(|(k, val)| {
+                    if val.is_table() || val.is_array() {
+                        Some((k.clone(), val.clone()))
+                    } else {
+                        None
+                    }
+                }).collect::<HashMap<_, _>>()),
+                toml::Value::Array(arr) => Some(arr.iter().filter_map(|table| {
+                    if let toml::Value::Table(t) = table {
+                        let mut map = HashMap::new();
+                        for (k, v) in t.iter() {
+                            if !v.is_integer() && !v.is_bool() {
+                                map.insert(k.clone(), v.clone());
+                            }
                         }
-                    })
-                    .collect()
+                        Some(map)
+                    } else {
+                        None
+                    }
+                }).flatten().collect()),
+                _ => None,
             })
             .unwrap_or_default();
 
@@ -283,6 +293,12 @@ impl ParsedConfig {
         if let Some(override_table) = overrides.as_table() {
             for (k, v) in override_table {
                 merged.insert(k.clone(), v.clone());
+            }
+        } else if let Some(override_array) = overrides.as_array() {
+            for table in override_array.iter().filter_map(|v| v.as_table()) {
+                for (k, v) in table {
+                    merged.insert(k.clone(), v.clone());
+                }
             }
         }
         merged

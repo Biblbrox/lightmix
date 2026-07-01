@@ -6,43 +6,40 @@ use burn::{
 
 use crate::attention::{NormalizationMode, sinkhorn};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Stochastic window attention implementation.
+/// By default, it works as a basic window attention. To apply double-stochastic behaviour,
+/// you need to set StochasticSelect/StochasticMul options.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum StochasticSelect {
     Q,
     K,
     Qk,
     Qkv,
+    #[default]
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum StochasticMul {
     Sinkhorn,
+    #[default]
     Softmax,
 }
 
-impl Default for StochasticSelect {
-    fn default() -> Self {
-        Self::Qk
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum SelectMethod {
+    #[default]
     Argmax,
     Topk,
 }
 
-impl Default for SelectMethod {
-    fn default() -> Self {
-        Self::Argmax
-    }
-}
-
-impl Default for StochasticMul {
-    fn default() -> Self {
-        Self::Sinkhorn
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum TrainingMode {
+    #[default]
+    Soft,
+    Mixed,
+    Hard,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -62,6 +59,8 @@ pub struct StochasticWindowMixerConfig {
     pub select_mode: SelectMethod,
     #[serde(default)]
     pub mul_mode: StochasticMul,
+    #[serde(default)]
+    pub training_mode: TrainingMode,
 }
 
 impl StochasticWindowMixerConfig {
@@ -82,6 +81,7 @@ impl StochasticWindowMixerConfig {
             norm_mode: NormalizationMode::default(),
             select_mode: SelectMethod::default(),
             mul_mode: StochasticMul::default(),
+            training_mode: TrainingMode::default(),
         }
     }
 }
@@ -102,6 +102,7 @@ pub struct StochasticWindowMixer<B: Backend> {
     norm_mode: NormalizationMode,
     select_mode: SelectMethod,
     mul_mode: StochasticMul,
+    train_mode: TrainingMode,
     seq_length: usize,
 }
 
@@ -125,24 +126,24 @@ impl<B: Backend> StochasticWindowMixer<B> {
         let t = self.temperature;
         match self.stoch_mode {
             StochasticSelect::Q => (
-                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode),
                 self.k_mat.val(),
                 self.v_mat.val(),
             ),
             StochasticSelect::K => (
                 self.q_mat.val(),
-                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode),
                 self.v_mat.val(),
             ),
             StochasticSelect::Qk => (
-                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
-                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode),
                 self.v_mat.val(),
             ),
             StochasticSelect::Qkv => (
-                sinkhorn(self.q_mat.val(), t, self.norm_mode.clone()),
-                sinkhorn(self.k_mat.val(), t, self.norm_mode.clone()),
-                sinkhorn(self.v_mat.val(), t, self.norm_mode.clone()),
+                sinkhorn(self.q_mat.val(), t, self.norm_mode),
+                sinkhorn(self.k_mat.val(), t, self.norm_mode),
+                sinkhorn(self.v_mat.val(), t, self.norm_mode),
             ),
             StochasticSelect::None => (self.q_mat.val(), self.k_mat.val(), self.v_mat.val()),
         }
@@ -158,7 +159,7 @@ impl<B: Backend> StochasticWindowMixer<B> {
 
         let apply_linear = |mat: Tensor<B, 4>| -> Tensor<B, 4> { x.clone().matmul(mat) };
 
-        match self.stoch_mode.clone() {
+        match self.stoch_mode {
             StochasticSelect::Q => (
                 apply_stochastic(q).unsqueeze_dim(3),
                 self.local_window(apply_linear(k)),
@@ -180,17 +181,21 @@ impl<B: Backend> StochasticWindowMixer<B> {
                 self.local_window(apply_stochastic(v)),
             ),
             StochasticSelect::None => (
-                self.local_window(apply_stochastic(q)),
-                self.local_window(apply_stochastic(k)),
-                self.local_window(apply_stochastic(v)),
+                apply_linear(q).unsqueeze_dim(3),
+                self.local_window(apply_linear(k)),
+                self.local_window(apply_linear(v)),
             ),
         }
     }
 
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
-        match B::ad_enabled(&x.device()) {
-            true => self.forward_soft(x),
-            false => self.forward_hard(x),
+        match self.train_mode {
+            TrainingMode::Soft => self.forward_soft(x),
+            TrainingMode::Hard => self.forward_hard(x),
+            TrainingMode::Mixed => match B::ad_enabled(&x.device()) {
+                true => self.forward_soft(x),
+                false => self.forward_hard(x),
+            },
         }
     }
 
@@ -277,11 +282,12 @@ impl StochasticWindowMixerConfig {
             dk,
             inv_scale: 1.0 / (dk as f32).sqrt(),
             window_indices: window_indices.clone().reshape([n * window]),
-            stoch_mode: self.stoch_mode.clone(),
+            stoch_mode: self.stoch_mode,
             seq_length: self.seq_length,
-            norm_mode: self.norm_mode.clone(),
-            select_mode: self.select_mode.clone(),
-            mul_mode: self.mul_mode.clone(),
+            norm_mode: self.norm_mode,
+            select_mode: self.select_mode,
+            mul_mode: self.mul_mode,
+            train_mode: self.training_mode,
         }
     }
 }
